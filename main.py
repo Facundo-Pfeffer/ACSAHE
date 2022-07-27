@@ -5,16 +5,12 @@ from hormigon import Hormigon
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
-import numpy as np
-import matplotlib.pyplot as plt
-
 
 
 class FindInitialDeformation:
     def __init__(self, def_de_pretensado_inicial):
         self.def_de_pretensado_inicial = def_de_pretensado_inicial
         self.excel_wb = ExcelManager("DISGHA Prueba MACROS.xlsm")
-        self.cargar_datos()
         self.acero_pasivo = AceroPasivo(self.excel_wb.get_value("C", "5"))
         self.acero_pretensado = AceroPretensado(tipo=self.excel_wb.get_value("C", "7"))
         self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
@@ -32,12 +28,6 @@ class FindInitialDeformation:
         result = fsolve(self.function_to_miminize, [0,0,0])
         self.print_result_unidimensional(result)
         # self.print_result_tridimensional(result)
-
-
-
-
-    def cargar_datos(self):
-        pass
 
     def obtener_matriz_acero_pasivo(self):
         rows = list(range(27, 31))
