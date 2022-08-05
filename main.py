@@ -2,6 +2,7 @@ from excel_manager import ExcelManager
 from acero_pretensado import AceroPretensado
 from acero_pasivo import AceroPasivo
 from hormigon import Hormigon
+from geometria import Nodo, Contorno
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
@@ -10,7 +11,7 @@ from scipy.optimize import fsolve
 class FindInitialDeformation:
     def __init__(self, def_de_pretensado_inicial):
         self.def_de_pretensado_inicial = def_de_pretensado_inicial
-        self.excel_wb = ExcelManager("DISGHA Prueba MACROS.xlsm")
+        self.excel_wb = ExcelManager("DISGHA Prueba SECCIONES.xlsm")
         self.acero_pasivo = AceroPasivo(self.excel_wb.get_value("C", "5"))
         self.acero_pretensado = AceroPretensado(tipo=self.excel_wb.get_value("C", "7"))
         self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
@@ -22,8 +23,6 @@ class FindInitialDeformation:
 
         self.XG = 0
         self.YG = 0
-
-
 
         result = fsolve(self.function_to_miminize, [0,0,0])
         self.print_result_unidimensional(result)
@@ -45,31 +44,71 @@ class FindInitialDeformation:
             resultado.append(x_y_d)
         return resultado
 
+    def get_signo(self, contorno):
+        value = self.excel_wb.get_value("D", contorno[0])
+        return +1 if "Pos" in value else -1
+
     def obtener_matriz_hormigon(self):
-        rows = list(range(18, 22))
-        extremos = []
-        for row in rows:
-            x_y = self.excel_wb.get_value("C", row), self.excel_wb.get_value("E", row)
-            extremos.append(x_y)
-        dx = self.excel_wb.get_value("C", 43)
-        dy = self.excel_wb.get_value("C", 45)
-        min_x = min([c[0] for c in extremos])
-        min_y = min([c[1] for c in extremos])
-        max_x = max([c[1] for c in extremos])
-        max_y = max([c[1] for c in extremos])
+        filas_hormigon = self.excel_wb.get_rows_range_between_values(("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS"))
+        lista_filas_contornos = self.excel_wb.subdivide_range_in_filled_ranges("B", filas_hormigon)
+        contornos = {}
+        coordenadas_nodos = []
+        for i, filas_contorno in enumerate(lista_filas_contornos):
+            signo = self.get_signo(filas_contorno)
+            for fila_n in filas_contorno[3:]: #TODO mejorar
+                x = self.excel_wb.get_value("C", fila_n)
+                y = self.excel_wb.get_value("E", fila_n)
+                coordenadas_nodos.append(Nodo(x, y))
+            contornos[str(i+1)] = Contorno(coordenadas_nodos, signo)
+            coordenadas_nodos = []
+        print(contornos)
         EEH = []
-        x_to_sum = dx / 2
-        y_to_sum = dy / 2
-        for i in range(math.floor((max_x-min_x)/dx)):
-            for j in range(math.floor((max_y-min_y)/dy)):
-                EEH.append((min_x + x_to_sum, min_y + y_to_sum, dx*dy))
-                y_to_sum = y_to_sum + dy
-            y_to_sum = dy / 2
-            x_to_sum = x_to_sum + dx
+        dx, dy = self.get_discretización()
+        for indice_contorno, contorno in contornos.items():
+            discretizacion = contorno.discretizar_contorno_como_rectangulo(dx=dx, dy=dy)
+            EEH = EEH + discretizacion
+            contorno.mostrar_contorno_y_discretizacion(discretizacion)
+        return EEH
+
+    def get_discretización(self):
+        rows_range = self.excel_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", 5, rows_range=range(40, 300))
+        dx = self.excel_wb.get_value_on_the_right("ΔX =", rows_range)
+        dy = self.excel_wb.get_value_on_the_right("ΔY =", rows_range)
+        return dx, dy
+
+
+
+            # filas_coordenadas
+        # contornos = [x for x in self.excel_wb.get_rows_range_between_values((x, x+1), column_letter="B", rows_range=filas_hormigon)
+        #              for x in range()]
+        #
+        # rows = list(range(18, 22))
+        # extremos = []
+        # for row in rows:
+        #     x_y = self.excel_wb.get_value("C", row), self.excel_wb.get_value("E", row)
+        #     extremos.append(x_y)
+        # dx = self.excel_wb.get_value("C", 43)
+        # dy = self.excel_wb.get_value("C", 45)
+        # min_x = min([c[0] for c in extremos])
+        # min_y = min([c[1] for c in extremos])
+        # max_x = max([c[1] for c in extremos])
+        # max_y = max([c[1] for c in extremos])
+        # EEH = []
+        # x_to_sum = dx / 2
+        # y_to_sum = dy / 2
+        # for i in range(math.floor((max_x-min_x)/dx)):
+        #     for j in range(math.floor((max_y-min_y)/dy)):
+        #         EEH.append((min_x + x_to_sum, min_y + y_to_sum, dx*dy))
+        #         y_to_sum = y_to_sum + dy
+        #     y_to_sum = dy / 2
+        #     x_to_sum = x_to_sum + dx
         return EEH
 
     def function_to_miminize(self, c):
         (ec, phix, phiy) = c
+        return self.calcular_sumatoria_de_fuerzas(ec, phix, phiy)
+
+    def calcular_sumatoria_de_fuerzas(self, ec, phix, phiy):
         ec_plano = lambda x, y: ec/100000+math.tan(math.radians(phix/1000))*y+math.tan(math.radians(phiy/1000)*x) # Ecuacion del plano
         sumF = 0
         Mx = 0
@@ -78,13 +117,13 @@ class FindInitialDeformation:
         EAP = self.EAP
         EEH = self.EEH
         for barra in EA:
-            x,y,e,A =barra[0], barra[1], ec_plano(barra[0], barra[1]), barra[2]
+            x, y, e, A = barra[0], barra[1], ec_plano(barra[0], barra[1]), barra[2]
             F = -self.acero_pasivo.relacion_constitutiva(e) * A
             sumF = sumF + F
             Mx = F * y + Mx
             My = -F * x + My
-        for barra in EAP:
-            x,y,e,A =barra[0], barra[1], ec_plano(barra[0], barra[1]), barra[2]
+        for barra_p in EAP:
+            x,y,e,A = barra_p[0], barra_p[1], ec_plano(barra_p[0], barra_p[1]), barra_p[2]
             F = (self.acero_pretensado.relacion_constitutiva(-e+self.def_de_pretensado_inicial)) * A
             sumF = sumF + F
             Mx = F * y + Mx
@@ -141,9 +180,6 @@ class FindInitialDeformation:
     #     plt.scatter(z, y, color="r", s=3, label="")
     #     plt.scatter(z_i, y, color="b", s=3, label="")
     #     plt.show()
-
-
-
 
 
 resolver = FindInitialDeformation(500/100000)
