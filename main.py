@@ -2,7 +2,7 @@ from excel_manager import ExcelManager
 from acero_pretensado import AceroPretensado
 from acero_pasivo import AceroPasivo
 from hormigon import Hormigon
-from geometria import Nodo, Contorno
+from geometria import Nodo, Contorno, Recta, SeccionGenerica
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
@@ -12,6 +12,7 @@ class FindInitialDeformation:
     def __init__(self, def_de_pretensado_inicial):
         self.def_de_pretensado_inicial = def_de_pretensado_inicial
         self.excel_wb = ExcelManager("DISGHA Prueba SECCIONES.xlsm")
+        # self.planos_de_deformación = self.obtener_planos_de_deformación()
         self.acero_pasivo = AceroPasivo(self.excel_wb.get_value("C", "5"))
         self.acero_pretensado = AceroPretensado(tipo=self.excel_wb.get_value("C", "7"))
         self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
@@ -27,6 +28,27 @@ class FindInitialDeformation:
         result = fsolve(self.function_to_miminize, [0,0,0])
         self.print_result_unidimensional(result)
         # self.print_result_tridimensional(result)
+
+    @staticmethod
+    def obtener_planos_de_deformación():
+        y = 1
+        result = []
+        for j in range(195):
+            if j <= 130:
+                punto_1 = Nodo(-3, y)
+                punto_2 = Nodo(-3 + 0.1*j, -y)
+            elif j>130 and j<=180:
+                punto_1 = Nodo(-3, y)
+                punto_2 = Nodo(10 + (j-130), -y)
+            else:
+                punto_1 = Nodo(-3+(j-180)*0.3, y)
+                punto_2 = Nodo(60, -y)
+            recta = Recta(punto_1, punto_2)
+            recta.mostrar_recta()
+            result.append(recta)
+        # plt.show()
+        return result
+
 
     def obtener_matriz_acero_pasivo(self):
         rows = list(range(27, 31))
@@ -61,13 +83,9 @@ class FindInitialDeformation:
                 coordenadas_nodos.append(Nodo(x, y))
             contornos[str(i+1)] = Contorno(coordenadas_nodos, signo)
             coordenadas_nodos = []
-        print(contornos)
-        EEH = []
         dx, dy = self.get_discretización()
-        for indice_contorno, contorno in contornos.items():
-            discretizacion = contorno.discretizar_contorno_como_rectangulo(dx=dx, dy=dy)
-            EEH = EEH + discretizacion
-            contorno.mostrar_contorno_y_discretizacion(discretizacion)
+        EEH = SeccionGenerica(contornos, dx, dy)
+        EEH.mostrar_seccion()
         return EEH
 
     def get_discretización(self):
@@ -75,34 +93,6 @@ class FindInitialDeformation:
         dx = self.excel_wb.get_value_on_the_right("ΔX =", rows_range)
         dy = self.excel_wb.get_value_on_the_right("ΔY =", rows_range)
         return dx, dy
-
-
-
-            # filas_coordenadas
-        # contornos = [x for x in self.excel_wb.get_rows_range_between_values((x, x+1), column_letter="B", rows_range=filas_hormigon)
-        #              for x in range()]
-        #
-        # rows = list(range(18, 22))
-        # extremos = []
-        # for row in rows:
-        #     x_y = self.excel_wb.get_value("C", row), self.excel_wb.get_value("E", row)
-        #     extremos.append(x_y)
-        # dx = self.excel_wb.get_value("C", 43)
-        # dy = self.excel_wb.get_value("C", 45)
-        # min_x = min([c[0] for c in extremos])
-        # min_y = min([c[1] for c in extremos])
-        # max_x = max([c[1] for c in extremos])
-        # max_y = max([c[1] for c in extremos])
-        # EEH = []
-        # x_to_sum = dx / 2
-        # y_to_sum = dy / 2
-        # for i in range(math.floor((max_x-min_x)/dx)):
-        #     for j in range(math.floor((max_y-min_y)/dy)):
-        #         EEH.append((min_x + x_to_sum, min_y + y_to_sum, dx*dy))
-        #         y_to_sum = y_to_sum + dy
-        #     y_to_sum = dy / 2
-        #     x_to_sum = x_to_sum + dx
-        return EEH
 
     def function_to_miminize(self, c):
         (ec, phix, phiy) = c
