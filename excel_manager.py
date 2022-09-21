@@ -53,6 +53,8 @@ class ExcelManager:
         for column_letter in columns_range:
             for row_number in rows_range:
                 cell_value = self.get_value(column_letter, row_number)
+                if isinstance(cell_value, str):
+                    cell_value = cell_value.strip()
                 if cell_value == start_value:
                     range_start = row_number
                 elif cell_value == end_value:
