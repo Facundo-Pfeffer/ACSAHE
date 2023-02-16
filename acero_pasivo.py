@@ -1,35 +1,31 @@
 import matplotlib.pyplot as plt
+import math
 
 
-class AceroPasivo():
+class BarraAceroPasivo():
+    tipos_de_acero_y_valores = {"ADN 420": {"fy": 420}, "ADN 500": {"fy": 500}, "ADN 220": {"fy": 220}}
+    E = None
+    fy = None
+    ey = None
 
-    def __init__(self, tipo):
-        self.fy = None
-        self.E = 200000
-        tipos_de_acero_y_valores = {
-            "ADN 420":
-                {
-                    "fy": 420
-                },
-            "ADN 500":
-                {
-                    "fy": 500
-                },
-            "ADN 220":
-                {
-                    "fy": 220
-                }
-        }
-
-        self.fy = tipos_de_acero_y_valores.get(tipo.upper())["fy"]
+    def __init__(self, x, y, d):
+        """Antes de inicializar una instancia de esta clase, los valores de fy [tension de fluencia del acero] y
+        E [modulo de elasticidad del material] deben ser inicializados por afuera de la clase."""
         self.ey = self.fy/self.E
+        self.x = x
+        self.xg = x
+        self.y = y
+        self.yg = y
+        self.diametro = d
+        self.area = math.pi*(d/2000)**2
+        self.y_girado = None
 
     def relacion_constitutiva(self, e):
         if abs(e) > self.ey:
-            sign = +1 if e>=0 else -1
-            return self.fy * sign
+            sign = +1 if e >= 0 else -1
+            return self.fy * sign * 1000  # Expresado en kN/m²
         else:
-            return self.E * e
+            return self.E * e * 1000
 
     def mostrar_relacion_constitutiva(self):
         particion_e = range(-1000, 1000)
