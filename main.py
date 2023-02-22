@@ -12,7 +12,7 @@ from scipy.optimize import fsolve
 class FindInitialDeformation:
     def __init__(self, def_de_pretensado_inicial):
         self.def_de_pretensado_inicial = def_de_pretensado_inicial
-        self.excel_wb = ExcelManager("DISGHA Prueba EJEMPLO 1.xlsm")
+        self.excel_wb = ExcelManager("DISGHA Prueba EJEMPLO 1 - PRETENSADO.xlsm")
 
         self.angulo_plano_de_carga_esperado = 0
         self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
@@ -43,21 +43,20 @@ class FindInitialDeformation:
         self.mostrar_resultado(lista_resultados)
 
     def mostrar_seccion(self):
-        self.EA.cargar_barras_como_circulos_para_mostrar()
         # ax = plt.gca()
         # ax.set_aspect('equal', adjustable='box')
+        self.EA.cargar_barras_como_circulos_para_mostrar()
         self.seccion_H.mostrar_seccion()
-
-
-
+        plt.axis('equal')
+        plt.show()
 
     def mostrar_resultado(self, lista_resultados):
         X = []
         Y = []
         for resultado in lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
-            x = -M
-            y = -sumF
+            x = M/100
+            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
 
@@ -81,10 +80,10 @@ class FindInitialDeformation:
         plt.scatter(X, Y, c="r", marker=".")
         for resultado in lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
-            x = -M
-            y = -sumF
+            x = M/100  # kN/m²
+            y = -sumF  # kN
             # plt.annotate(str(phi), (x,y))
-            plt.annotate(str(plano_def[2]), (x,y))
+            plt.annotate(str(plano_def[2]), (x, y))
             # plt.annotate(str(plano_def), (x,y))
 
         plt.show()
@@ -99,7 +98,7 @@ class FindInitialDeformation:
         lista_de_puntos = []
         for plano_de_deformacion in self.planos_de_deformacion:
             try:
-                sol = fsolve(self.obtener_theta_para_plano_de_carga, 0, args=plano_de_deformacion, xtol=0.0004,
+                sol = fsolve(self.obtener_theta_para_plano_de_carga, 0, args=plano_de_deformacion, xtol=0.05,
                              full_output=1)
                 theta, diferencia_plano_de_carga = sol[0][0], sol[1]['fvec']
                 if abs(diferencia_plano_de_carga) < 2:
@@ -282,8 +281,8 @@ class FindInitialDeformation:
             x, y, d = self.obtener_valores_acero_tabla(fila)
             if d == 0:
                 continue
-            xg = round(x - self.XG, 10)
-            yg = round(y - self.YG, 10)
+            xg = round(x*100 - self.XG, 10)
+            yg = round(y*100 - self.YG, 10)
             resultado.append(BarraAceroPasivo(xg, yg, d))
         return resultado
 
@@ -325,7 +324,7 @@ class FindInitialDeformation:
             values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo)
             for k, v in values.items():
                 setattr(BarraAceroPretensado, k, v)
-            BarraAceroPretensado.Eps = 200000
+            BarraAceroPretensado.Eps = 20000  # kN/cm²
             BarraAceroPretensado.deformacion_de_pretensado_inicial = self.def_de_pretensado_inicial
         except Exception:
             raise Exception("No se pudieron setear las propiedades del acero activo, revise configuración")
@@ -348,7 +347,7 @@ class FindInitialDeformation:
             for fila_n in self.excel_wb.get_n_rows_after_value("Nodo nº", cantidad_de_nodos+1, rows_range=filas_contorno)[1:]:
                 x = self.excel_wb.get_value("C", fila_n)
                 y = self.excel_wb.get_value("E", fila_n)
-                coordenadas_nodos.append(Nodo(x, y))
+                coordenadas_nodos.append(Nodo(x*100, y*100))
             contornos[str(i+1)] = Contorno(coordenadas_nodos, signo, ordenar=True)
             coordenadas_nodos = []
         dx, dy = self.get_discretizacion()
@@ -359,7 +358,7 @@ class FindInitialDeformation:
         rows_range = self.excel_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", 5, rows_range=range(40, 300))
         dx = self.excel_wb.get_value_on_the_right("ΔX =", rows_range)
         dy = self.excel_wb.get_value_on_the_right("ΔY =", rows_range)
-        return dx, dy
+        return dx * 100, dy * 100  # En centímetros
 
     def function_to_miminize(self, c):
         (ec, phix, phiy) = c
@@ -401,7 +400,7 @@ class FindInitialDeformation:
             My = -F * x + My
         for elemento in EEH:
             x, y, e, A = elemento.xg, elemento.yg, ec_plano(elemento.xg, elemento.yg), elemento.area
-            F = -(self.hormigon.relacion_constitutiva(e)) * A
+            F = -(self.hormigon.relacion_constitutiva_elastica(e)) * A
             sumF = sumF + F
             Mx = F * y + Mx
             My = -F * x + My
@@ -453,7 +452,7 @@ class FindInitialDeformation:
     #     plt.show()
 
 
-resolver = FindInitialDeformation(500/100000)
+resolver = FindInitialDeformation(5/1000)
 
 
 

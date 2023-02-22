@@ -234,9 +234,9 @@ class Poligono(object):
         espesor = random.choice(lista_espesores) if espesor is None else espesor
         for segmento in self.segmentos_borde:
             x, y = [segmento.nodo_1.x, segmento.nodo_2.x], [segmento.nodo_1.y, segmento.nodo_2.y]
-            plt.plot(x, y, c=colour, alpha=1, linewidth=espesor)
+            plt.plot(x, y, c=colour, alpha=1, linewidth=espesor, zorder=0)
         if mostrar_centroide:
-            plt.scatter(self.xg, self.yg, c=colour, marker=".")
+            plt.scatter(self.xg, self.yg, c=colour, marker=".", zorder=0)
         if texto_a_mostrar:
             plt.text(self.xg, self.yg, texto_a_mostrar)
 
@@ -481,8 +481,7 @@ class SeccionGenerica(object):
             contorno_negativo.cargar_poligono_para_mostrar(indice_color=2, espesor=2)
         for contorno_positivo in self.contornos_positivos:
             contorno_positivo.cargar_poligono_para_mostrar(indice_color=1, espesor=2)
-        plt.title("Resultado Final")
-        plt.show()
+        plt.title("Sección y Discretización")
 
     def obtener_baricentro_y_area(self):
         area_total = 0

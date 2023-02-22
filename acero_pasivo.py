@@ -16,16 +16,16 @@ class BarraAceroPasivo():
         self.xg = x
         self.y = y
         self.yg = y
-        self.diametro = d
-        self.area = math.pi*(d/2000)**2
+        self.diametro = d  # mm
+        self.area = math.pi*(d/20)**2  # cm²
         self.y_girado = None
 
     def relacion_constitutiva(self, e):
         if abs(e) > self.ey:
             sign = +1 if e >= 0 else -1
-            return self.fy * sign * 1000  # Expresado en kN/m²
+            return self.fy * sign / 10  # kN/cm²
         else:
-            return self.E * e * 1000
+            return self.E * e / 10  # kN/cm²
 
     def mostrar_relacion_constitutiva(self):
         particion_e = range(-1000, 1000)
