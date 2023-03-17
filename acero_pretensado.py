@@ -24,7 +24,7 @@ class BarraAceroPretensado():
             },
         "TRENZAS C1900":
             {
-                "fpu": 1860,
+                "fpu": 1860,  # Mpa
                 "fpy": 1665,
                 "epu": 0.069,
                 "N": 7.344,
@@ -41,18 +41,20 @@ class BarraAceroPretensado():
     Eps = None
     deformacion_de_pretensado_inicial = None
 
-    def __init__(self, x, y, d):
+    def __init__(self, x, y, area):
         self.x = x
         self.xg = x
         self.y = y
         self.yg = y
-        self.area = math.pi*(d/2000)**2
+        self.area = area
         self.y_girado = None
         self.x_girado = None
         self.def_elastica_hormigon_perdidas = None
 
     def relacion_constitutiva(self, e):
-        return self.Eps * e * (self.Q + (1-self.Q)/((1+(self.Eps*e/(self.K*self.fpy))**(self.N))**(1/self.N)))
+        """Relación constitutiva propuesta por Menegotto y Pinto, se recomienda que este método sea sobrescrito
+        con la relación constitutiva que quiera utilizarse para el acero de pretensado, como la del fabricante."""
+        return self.Eps * e * (self.Q + (1-self.Q)/((1+(self.Eps*abs(e)/(self.K*self.fpy/10))**(self.N))**(1/self.N)))  #  kN/cm²
 
     def mostrar_relacion_constitutiva(self):
         particion_e = range(1100)

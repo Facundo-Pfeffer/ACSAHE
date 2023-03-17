@@ -3,18 +3,19 @@ from acero_pretensado import BarraAceroPretensado
 from acero_pasivo import BarraAceroPasivo
 from hormigon import Hormigon
 from geometria import Nodo, Contorno, Recta, SeccionGenerica
-from matrices import MatrizAceroPasivo
+from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
+from mpl_toolkits.mplot3d import Axes3D
 
 
 class FindInitialDeformation:
     def __init__(self, def_de_pretensado_inicial):
         self.def_de_pretensado_inicial = def_de_pretensado_inicial
-        self.excel_wb = ExcelManager("DISGHA Prueba EJEMPLO 1 - PRETENSADO.xlsm")
+        self.excel_wb = ExcelManager("DISGHA Prueba - PRETENSADO EJEMPLO 7.4 LIBRO.xlsm")
 
-        self.angulo_plano_de_carga_esperado = 0
+        self.angulo_plano_de_carga_esperado = 90
         self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
         self.tipo_estribo = self.excel_wb.get_value("E", "9")
         self.setear_propiedades_acero_pasivo()
@@ -33,22 +34,28 @@ class FindInitialDeformation:
 
         self.mostrar_seccion()
 
-        result = fsolve(self.function_to_miminize, [0, 0, 0])
-        ec, phix, phiy = result
-        self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec/100000+math.tan(math.radians(phix/1000))*(y-self.YG) + math.tan(math.radians(phiy/1000))*(x-self.XG)  # Ecuacion del plano referida al sistema de ecuaciones sin rotar
+        ec, phix, phiy = self.obtener_plano_deformación_inicial()
+        self.print_result_tridimensional(ec, phix, phiy)
+        self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec+math.tan(math.radians(phix))*(y)+math.tan(math.radians(phiy))*(x)
         self.asignar_deformacion_hormigon_a_elementos_pretensados()
 
-        self.print_result_unidimensional(result)
         lista_resultados = self.iterar()
         self.mostrar_resultado(lista_resultados)
+
+    def obtener_plano_deformación_inicial(self):
+        resultado = fsolve(self.function_to_miminize, [-self.def_de_pretensado_inicial, 0, 0])
+        self.function_to_miminize(resultado)
+        return resultado
 
     def mostrar_seccion(self):
         # ax = plt.gca()
         # ax.set_aspect('equal', adjustable='box')
         self.EA.cargar_barras_como_circulos_para_mostrar()
-        self.seccion_H.mostrar_seccion()
+        self.EAP.cargar_barras_como_circulos_para_mostrar()
+        self.seccion_H.mostrar_contornos_2d()
+        self.seccion_H.mostrar_discretizacion_2d()
+        plt.title("Sección y Discretización")
         plt.axis('equal')
-        plt.show()
 
     def mostrar_resultado(self, lista_resultados):
         X = []
@@ -75,24 +82,22 @@ class FindInitialDeformation:
         ax.xaxis.set_ticks_position('bottom')
         ax.yaxis.set_ticks_position('left')
 
-
-
         plt.scatter(X, Y, c="r", marker=".")
         for resultado in lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
             x = M/100  # kN/m²
             y = -sumF  # kN
             # plt.annotate(str(phi), (x,y))
-            plt.annotate(str(plano_def[2]), (x, y))
+            # plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
+            plt.annotate(plano_def[2], (x, y))
             # plt.annotate(str(plano_def), (x,y))
 
         plt.show()
 
-
     def asignar_deformacion_hormigon_a_elementos_pretensados(self):
         ec_plano = self.ec_plano_deformacion_elastica_inicial
         for elemento_pretensado in self.EAP:
-            elemento_pretensado.def_elastica_hormigon_perdidas = ec_plano(elemento_pretensado.x, elemento_pretensado.y)
+            elemento_pretensado.def_elastica_hormigon_perdidas = ec_plano(elemento_pretensado.xg, elemento_pretensado.yg)
 
     def iterar(self):
         lista_de_puntos = []
@@ -148,65 +153,6 @@ class FindInitialDeformation:
             inclinacion_plano_de_carga = 0
         return inclinacion_plano_de_carga
 
-    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(self,EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
-        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
-        sumFA = sumFP = sumFH = 0
-        MxA = MxAP = MxH = 0
-        MyA = MyAP = MyH = 0
-        e1, e2 = ecuacion_plano_deformacion(y_max), ecuacion_plano_deformacion(y_min)
-
-        def_max_comp = min(e1, e2)
-
-        # c = def_max_comp*(y_max-y_min)/(-e1+e2)
-
-        for barra in EA_girado:
-            dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
-            FA = barra.relacion_constitutiva(def_elemento) * area
-            sumFA = sumFA + FA
-            MxA = FA * barra.yg + MxA
-            MyA = -FA * barra.xg + MyA
-
-        for barra_p in EAP_girado:
-            dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(barra_p.y_girado), barra_p.area
-            deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
-            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
-            deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
-
-            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
-            sumFP = sumFP + Fp
-            MxAP = Fp * barra_p.yg + MxAP
-            MyAP = -Fp * barra_p.xg + MyAP
-
-        for elemento in EEH_girado:
-            def_elemento, area = ecuacion_plano_deformacion(elemento.y_girado), elemento.area
-            F_hor = self.hormigon.relacion_constitutiva_simplificada(def_elemento, e_max_comp=def_max_comp)*area
-            sumFH = sumFH + F_hor
-            MxH = F_hor * elemento.yg + MxH
-            MyH = -F_hor * elemento.xg + MyH
-
-        factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(EA_girado, ecuacion_plano_deformacion, self.tipo_estribo)
-        # factor_minoracion_de_resistencia = 1
-        resultados_parciales = {
-            "H": {"F": sumFH,
-                  "Mx": MxH,
-                  "My": MyH},
-            "A": {"F": sumFA,
-                  "Mx": MxA,
-                  "My": MyA},
-            "AP": {"F": sumFP,
-                  "Mx": MxAP,
-                  "My": MyAP}
-        }
-
-        sumF = sumFA + sumFP + sumFH
-        Mx = round(MxA + MxAP + MxH, 8)
-        My = round(MyA + MyAP + MyH, 8)
-
-
-        sumF = factor_minoracion_de_resistencia * sumF
-        Mx = factor_minoracion_de_resistencia * Mx
-        My = factor_minoracion_de_resistencia * My
-        return sumF, Mx, My, factor_minoracion_de_resistencia
 
     def obtener_ecuacion_plano_deformacion(self, EEH_girado, plano_de_deformacion):
         y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
@@ -281,8 +227,8 @@ class FindInitialDeformation:
             x, y, d = self.obtener_valores_acero_tabla(fila)
             if d == 0:
                 continue
-            xg = round(x*100 - self.XG, 10)
-            yg = round(y*100 - self.YG, 10)
+            xg = round(x*100 - self.XG, 5)
+            yg = round(y*100 - self.YG, 5)
             resultado.append(BarraAceroPasivo(xg, yg, d))
         return resultado
 
@@ -307,14 +253,14 @@ class FindInitialDeformation:
 
     def obtener_matriz_acero_pretensado(self):
         lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS PRETENSADAS", "DISCRETIZACIÓN DE LA SECCIÓN"))
-        resultado = []
-        for fila in lista_filas[5:-1]:
-            x, y, d = self.obtener_valores_acero_tabla(fila)
-            if d == 0:
+        resultado = MatrizAceroActivo()
+        for fila in lista_filas[5:-1]:  #TODO mejorar
+            x, y, area = self.obtener_valores_acero_tabla(fila)
+            if area == 0:
                 continue
-            x = x - self.XG
-            y = y - self.YG
-            resultado.append(BarraAceroPretensado(x, y, d))
+            xg = round(x * 100 - self.XG, 5)
+            yg = round(y * 100 - self.YG, 5)
+            resultado.append(BarraAceroPretensado(xg, yg, area))
         return resultado
 
     def setear_propiedades_acero_activo(self):
@@ -364,12 +310,11 @@ class FindInitialDeformation:
         (ec, phix, phiy) = c
         return self.calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(ec, phix, phiy)
 
-
-    def obtener_factor_minoracion_de_resistencia(self, EA, ecuacion_plano_de_def, tipo_estribo):
+    def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
-        if len(EA) == 0:  # Hormigón Simple
+        if len(EA_girado) == 0 and len(EAP_girado) == 0:  # Hormigón Simple
             return 0.55
-        lista_def_girado = [ecuacion_plano_de_def(barra.y_girado) for barra in EA]
+        lista_def_girado = [ecuacion_plano_de_def(barra.y_girado) for barra in EA_girado+EAP_girado]
         y_girado_max = max(lista_def_girado)
         if y_girado_max >= 5/1000:
             return 0.9
@@ -379,80 +324,119 @@ class FindInitialDeformation:
             return phi_min*(0.005-y_girado_max)/0.003 + 0.9*(y_girado_max-0.002)/0.003  # Interpolación lineal
 
     def calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(self, ec, phix, phiy):
-        ec_plano = lambda x, y: ec/100000+math.tan(math.radians(phix/1000))*(y-self.YG)+math.tan(math.radians(phiy/1000))*(x-self.XG) # Ecuacion del plano
-        sumF = 0
-        Mx = 0
-        My = 0
-        EA = self.EA
-        EAP = self.EAP
-        EEH = self.EEH
-        for barra in EA:
-            x, y, e, A = barra.x, barra.y, ec_plano(barra.x, barra.y), barra.area
-            F = -barra.relacion_constitutiva(e) * A
-            sumF = sumF + F
-            Mx = F * y + Mx
-            My = -F * x + My
-        for barra_p in EAP:
-            x, y, e, A = barra_p.x, barra_p.y, ec_plano(barra_p.x, barra_p.y), barra_p.area
-            F = (barra_p.relacion_constitutiva(-e+self.def_de_pretensado_inicial)) * A
-            sumF = sumF + F
-            Mx = F * y + Mx
-            My = -F * x + My
-        for elemento in EEH:
-            x, y, e, A = elemento.xg, elemento.yg, ec_plano(elemento.xg, elemento.yg), elemento.area
-            F = -(self.hormigon.relacion_constitutiva_elastica(e)) * A
-            sumF = sumF + F
-            Mx = F * y + Mx
-            My = -F * x + My
+        ecuacion_plano_deformacion = lambda x, y: ec+math.tan(math.radians(phix))*(y)+math.tan(math.radians(phiy))*(x)
+        sumFA = sumFP = sumFH = 0
+        MxA = MxAP = MxH = 0
+        MyA = MyAP = MyH = 0
+        for barra in self.EA:
+            def_elemento, area = ecuacion_plano_deformacion(barra.xg, barra.yg), barra.area
+            FA = barra.relacion_constitutiva(def_elemento) * area
+            sumFA = sumFA + FA
+            MxA = FA * barra.yg + MxA
+            MyA = -FA * barra.xg + MyA
+        for barra_p in self.EAP:
+            deformacion_elastica_hormingon, area = ecuacion_plano_deformacion(barra_p.xg, barra_p.yg), barra_p.area
+            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
+            deformacion_total = deformacion_elastica_hormingon + deformacion_pretensado_inicial
+
+            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
+            sumFP = sumFP + Fp
+            MxAP = Fp * barra_p.yg + MxAP
+            MyAP = -Fp * barra_p.xg + MyAP
+
+        for elemento in self.EEH:
+            def_elemento, area = ecuacion_plano_deformacion(elemento.xg, elemento.yg), elemento.area
+            F_hor = self.hormigon.relacion_constitutiva_elastica(def_elemento)*area
+            sumFH = sumFH + F_hor
+            MxH = F_hor * elemento.yg + MxH
+            MyH = -F_hor * elemento.xg + MyH
+
+        sumF = sumFA + sumFP + sumFH
+        Mx = round(MxA + MxAP + MxH, 8)
+        My = round(MyA + MyAP + MyH, 8)
+
         return [sumF, Mx, My]
 
-    def iterate(self):
-        ec_range = range(200)
-        px_range = range(500)
-        py_range = range(500)
-        min_result_sum = 100000
-        min_r = None
-        min_p = None
-        for ec_v in ec_range:
-            for px_v in px_range:
-                for py_v in py_range:
-                    result = self.function_to_miminize((ec_v, px_v/100, py_v/100))
-                    if abs(sum(result)) < abs(min_result_sum):
-                        min_result_sum = sum(result)
-                        min_r = result
-                        min_p = (ec_v, px_v, py_v)
-        print(f'\n{min_r} {min_p}\n')
-        return min_p
 
-    def print_result_unidimensional(self, result):
-        ec, phix, phiy = result
-        ec_plano = lambda x, y: ec / 100000 + math.tan(math.radians(phix / 1000)) * y + math.tan(
-            math.radians(phiy / 1000) * x)
-        y = [n/100 for n in range(-100, 100)]
-        z = [ec_plano(0, n) for n in y]
-        z_i = [0 for n in y]
-        plt.scatter(z, y, color="r", s=3, label="")
-        plt.scatter(z_i, y, color="b", s=3, label="")
-        # plt.show()
+    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(self,EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
+        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
+        sumFA = sumFP = sumFH = 0
+        MxA = MxAP = MxH = 0
+        MyA = MyAP = MyH = 0
+        e1, e2 = ecuacion_plano_deformacion(y_max), ecuacion_plano_deformacion(y_min)
 
-    # def print_result_tridimensional(self, result):
-    #     ec, phix, phiy = result
-    #     ec_plano = lambda x, y: ec / 100000 + math.tan(math.radians(phix / 1000)) * y + math.tan(
-    #         math.radians(phiy / 1000) * x)
-    #     x = [n/100 for n in range(-100, 100)]
-    #     y = [n/100 for n in range(-100, 100)]
-    #     plot = []
-    #     for i in range(100):
-    #         for j in range(100):
-    #             plot.append((x[i], y[j], ec_plano(x[i], y[j]))
-    #
-    #     ax = plt.axes(projection='3d')
-    #     plt.scatter(z, y, color="r", s=3, label="")
-    #     plt.scatter(z_i, y, color="b", s=3, label="")
-    #     plt.show()
+        def_max_comp = min(e1, e2)
+
+        # c = def_max_comp*(y_max-y_min)/(-e1+e2)
+
+        for barra in EA_girado:
+            dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
+            FA = barra.relacion_constitutiva(def_elemento) * area
+            sumFA = sumFA + FA
+            MxA = FA * barra.yg + MxA
+            MyA = -FA * barra.xg + MyA
+
+        deformaciones_pp = []
+        for barra_p in EAP_girado:
+            dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(barra_p.y_girado), barra_p.area
+            deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
+            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
+            deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
 
 
-resolver = FindInitialDeformation(5/1000)
+            deformaciones_pp.append(
+                {
+                "elastica": deformacion_hormigon,
+                "inicial": deformacion_pretensado_inicial,
+                "neta": deformacion_neta,
+                "total": deformacion_total
+                }
+            )
+
+
+            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
+            sumFP = sumFP + Fp
+            MxAP = Fp * barra_p.yg + MxAP
+            MyAP = -Fp * barra_p.xg + MyAP
+
+        for elemento in EEH_girado:
+            def_elemento, area = ecuacion_plano_deformacion(elemento.y_girado), elemento.area
+            F_hor = self.hormigon.relacion_constitutiva_simplificada(def_elemento, e_max_comp=def_max_comp)*area
+            sumFH = sumFH + F_hor
+            MxH = F_hor * elemento.yg + MxH
+            MyH = -F_hor * elemento.xg + MyH
+
+        factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(
+            EA_girado, EAP_girado,ecuacion_plano_deformacion, self.tipo_estribo)
+        # factor_minoracion_de_resistencia = 1
+        resultados_parciales = {
+            "H": {"F": sumFH,
+                  "Mx": MxH,
+                  "My": MyH},
+            "A": {"F": sumFA,
+                  "Mx": MxA,
+                  "My": MyA},
+            "AP": {"F": sumFP,
+                  "Mx": MxAP,
+                  "My": MyAP}
+        }
+
+        sumF = sumFA + sumFP + sumFH
+        Mx = round(MxA + MxAP + MxH, 8)
+        My = round(MyA + MyAP + MyH, 8)
+
+
+        sumF = factor_minoracion_de_resistencia * sumF
+        Mx = factor_minoracion_de_resistencia * Mx
+        My = factor_minoracion_de_resistencia * My
+        return sumF, Mx, My, factor_minoracion_de_resistencia
+
+    def print_result_tridimensional(self, ec, phix, phiy):
+        ec_plano = lambda x, y: ec+math.tan(math.radians(phix)) * y + math.tan(math.radians(phiy)) * x
+        self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
+
+
+resolver = FindInitialDeformation(0.00521)
 
 
 

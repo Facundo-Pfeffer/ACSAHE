@@ -4,6 +4,7 @@ import numpy as np
 import math
 from copy import copy as CopyObject
 
+
 class Nodo(object):
     def __init__(self, x: (int, float), y: (int, float)):
         self.x = x
@@ -227,14 +228,37 @@ class Poligono(object):
         i_punto = indice_punto_1 + valor_a_sumar
         return i_punto if i_punto < self.total_de_nodos else i_punto - self.total_de_nodos
 
-    def cargar_poligono_para_mostrar(self, indice_color=None, titulo=None, espesor=None, mostrar_centroide=False, texto_a_mostrar=None):
+    def cargar_poligono_para_mostrar(self, indice_color=None,
+                                     espesor=None,
+                                     mostrar_centroide=False,
+                                     texto_a_mostrar=None,
+                                     tridimensional=False,
+                                     ec_plano_3d=None,
+                                     plt_3d = None):
         lista_colores = ["r", "b", "g", "c", "m", "y", "k"]
         lista_espesores = [x/5 for x in range(10, 20)]
         colour = random.choice(lista_colores) if indice_color is None else lista_colores[indice_color]
         espesor = random.choice(lista_espesores) if espesor is None else espesor
+        x = []
+        y = []
         for segmento in self.segmentos_borde:
-            x, y = [segmento.nodo_1.x, segmento.nodo_2.x], [segmento.nodo_1.y, segmento.nodo_2.y]
+            x.extend([segmento.nodo_1.x, segmento.nodo_2.x])
+            y.extend([segmento.nodo_1.y, segmento.nodo_2.y])
+
+        if not tridimensional:
             plt.plot(x, y, c=colour, alpha=1, linewidth=espesor, zorder=0)
+        else:  # Figura 3d
+            z1 = [0] * len(x)
+            z2 = [ec_plano_3d(x[i], y[i]) for i in range(len(x))]
+            x = x * 2
+            y = y * 2
+            z = z1 + z2
+            for i in range(len(x)-1):
+                x0, y0, z0 = [x[i], x[i+1]], [y[i], y[i+1]], [z[i], z[i+1]]
+                plt_3d.plot(z0, x0, y0,
+                            c=colour if i != len(x)/2-1 else "w",
+                            alpha=1, linewidth=espesor, zorder=0)
+
         if mostrar_centroide:
             plt.scatter(self.xg, self.yg, c=colour, marker=".", zorder=0)
         if texto_a_mostrar:
@@ -472,16 +496,32 @@ class SeccionGenerica(object):
                 return None
         return elemento_positivo
 
-    def mostrar_seccion(self):
-        for elemento in self.elementos:
-            elemento.cargar_poligono_para_mostrar(indice_color=3, espesor=2, mostrar_centroide=True,
-                                                  # texto_a_mostrar=str(elemento.area)
-                                                  )
+    def mostrar_contornos_2d(self):
         for contorno_negativo in self.contornos_negativos:
             contorno_negativo.cargar_poligono_para_mostrar(indice_color=2, espesor=2)
         for contorno_positivo in self.contornos_positivos:
             contorno_positivo.cargar_poligono_para_mostrar(indice_color=1, espesor=2)
-        plt.title("Sección y Discretización")
+
+    def mostrar_discretizacion_2d(self):
+        for elemento in self.elementos:
+            elemento.cargar_poligono_para_mostrar(indice_color=3, espesor=2, mostrar_centroide=True)
+
+    def mostrar_contornos_3d(self, ecuacion_plano_a_desplazar=None):
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        for contorno_negativo in self.contornos_negativos:
+            contorno_negativo.cargar_poligono_para_mostrar(
+                indice_color=2, espesor=2, tridimensional=True, ec_plano_3d=ecuacion_plano_a_desplazar,
+                plt_3d=ax)
+        for contorno_positivo in self.contornos_positivos:
+            contorno_positivo.cargar_poligono_para_mostrar(
+                indice_color=1, espesor=2, tridimensional=True, ec_plano_3d=ecuacion_plano_a_desplazar,
+                plt_3d=ax)
+
+    def mostrar_discretizacion_3d_desplazada(self):
+        for elemento in self.elementos:
+            elemento.cargar_poligono_para_mostrar(indice_color=3, espesor=2, mostrar_centroide=True)
+
 
     def obtener_baricentro_y_area(self):
         area_total = 0
