@@ -7,20 +7,25 @@ from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
-from mpl_toolkits.mplot3d import Axes3D
 
 
 class FindInitialDeformation:
-    def __init__(self, def_de_pretensado_inicial):
-        self.def_de_pretensado_inicial = def_de_pretensado_inicial
-        self.excel_wb = ExcelManager("DISGHA Prueba - PRETENSADO EJEMPLO 7.4 LIBRO.xlsm")
+    def __init__(self):
+        self.excel_wb = ExcelManager("DISGHA Prueba - PRETENSADO EJEMPLO 7.4 LIBRO + PASIVA.xlsm")
+        self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
 
-        self.angulo_plano_de_carga_esperado = 90
-        self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "3"))
-        self.tipo_estribo = self.excel_wb.get_value("E", "9")
+        self.def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
+        self.def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
+
+        self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "4"))  # TODO mejorar
+        self.tipo_estribo = self.excel_wb.get_value("E", "10")
+
         self.setear_propiedades_acero_pasivo()
         self.setear_propiedades_acero_activo()
+
         self.planos_de_deformacion = self.obtener_planos_de_deformacion()
+        self.mostrar_planos_de_deformacion()
+
 
         self.dx, self.dy = self.get_discretizacion()
 
@@ -31,8 +36,9 @@ class FindInitialDeformation:
 
         self.EA = self.obtener_matriz_acero_pasivo()
         self.EAP = self.obtener_matriz_acero_pretensado()
-
         self.mostrar_seccion()
+
+        self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
 
         ec, phix, phiy = self.obtener_plano_deformación_inicial()
         self.print_result_tridimensional(ec, phix, phiy)
@@ -43,19 +49,47 @@ class FindInitialDeformation:
         self.mostrar_resultado(lista_resultados)
 
     def obtener_plano_deformación_inicial(self):
-        resultado = fsolve(self.function_to_miminize, [-self.def_de_pretensado_inicial, 0, 0])
-        self.function_to_miminize(resultado)
-        return resultado
+        resultado = fsolve(
+            self.converger_funcion_desplazamiento_elastico_inicial, [-self.def_de_pretensado_inicial, 0, 0])
+        ec, phix, phiy = resultado
+        return ec, phix, phiy
+
+    def converger_funcion_desplazamiento_elastico_inicial(self, c):
+        (ec, phix, phiy) = c
+        return self.calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(ec, phix, phiy)
+
+    def obtener_deformacion_maxima_de_acero(self):
+        def_max_acero_pasivo = BarraAceroPasivo.eu
+        def_max_acero_activo = BarraAceroPretensado.epu
+        return min(def_max_acero_pasivo, def_max_acero_activo)
+
+    def obtener_def_de_rotura_a_pasivo(self):
+        value = self.excel_wb.get_value("E", 6)  # TODO mejorar
+        return value
+
+    def obtener_def_de_pretensado_inicial(self):
+        value = self.excel_wb.get_value("E", 8)  # TODO mejorar
+        return value/1000
 
     def mostrar_seccion(self):
         # ax = plt.gca()
         # ax.set_aspect('equal', adjustable='box')
-        self.EA.cargar_barras_como_circulos_para_mostrar()
-        self.EAP.cargar_barras_como_circulos_para_mostrar()
+        fig, ax = self.EA.cargar_barras_como_circulos_para_mostrar()
+        self.EAP.cargar_barras_como_circulos_para_mostrar(fig, ax)
         self.seccion_H.mostrar_contornos_2d()
         self.seccion_H.mostrar_discretizacion_2d()
         plt.title("Sección y Discretización")
         plt.axis('equal')
+
+    def mostrar_planos_de_deformacion(self):
+        lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
+        plt.plot([0, 0], [1, -1], c=lista_colores[0], linewidth=10, zorder=10)
+        for p_def in self.planos_de_deformacion:
+            plt.title("Planos de Deformación")
+            tipo = p_def[2]
+            if tipo > 0:
+                plt.plot([-p_def[0], -p_def[1]], [1,-1], c=lista_colores[tipo], linewidth=2, zorder=1)
+        plt.show()
 
     def mostrar_resultado(self, lista_resultados):
         X = []
@@ -89,7 +123,7 @@ class FindInitialDeformation:
             y = -sumF  # kN
             # plt.annotate(str(phi), (x,y))
             # plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
-            plt.annotate(plano_def[2], (x, y))
+            # plt.annotate(plano_def[2], (x, y))
             # plt.annotate(str(plano_def), (x,y))
 
         plt.show()
@@ -103,7 +137,7 @@ class FindInitialDeformation:
         lista_de_puntos = []
         for plano_de_deformacion in self.planos_de_deformacion:
             try:
-                sol = fsolve(self.obtener_theta_para_plano_de_carga, 0, args=plano_de_deformacion, xtol=0.05,
+                sol = fsolve(self.obtener_theta_para_plano_de_carga, 0, args=plano_de_deformacion, xtol=0.0001,
                              full_output=1)
                 theta, diferencia_plano_de_carga = sol[0][0], sol[1]['fvec']
                 if abs(diferencia_plano_de_carga) < 2:
@@ -176,49 +210,40 @@ class FindInitialDeformation:
         value = -elemento.xg * math.sin(angulo_rad) + elemento.yg * math.cos(angulo_rad)
         return value
 
-    @staticmethod
-    def obtener_planos_de_deformacion():
-        result = []
-        for j in range(290):
+    def obtener_planos_de_deformacion(self):
+        """Obtiene una lista de los planos de deformación últimos a utilizarse para determinar los estados de resistencia
+        últimos, cada elemento de esta lista representa, en principio, un punto sobre el diagrama de interacción."""
+        lista_de_planos = []
+        for j in range(285):
             if j <= 25:
                 def_superior = -3
                 def_inferior = -3 + 0.1*j
-                tipo = f"1-{j}"
+                tipo = 1
             elif j>25 and j<=100:
                 def_superior = -3
                 def_inferior = -3 + 0.03 * j
-                tipo = f"2-{j}"
+                tipo = 2
             elif j>100 and j<=200:
                 def_superior = -3
                 def_inferior = -3 + 0.1 * (j-70)
-                tipo = f"3-{j}"
-            elif j>200 and j<=230:
+                tipo = 3
+            elif j>200 and j<=225:
                 def_superior = -3
                 def_inferior = 10 + (j-200)*2
-                tipo = f"4-{j}"
+                tipo = 4
             else:
-                def_superior = -3+(j-230)*0.15
+                def_superior = -3+(j-225)*0.15
                 def_inferior = 60
-                tipo = f"5-{j}"
-        # for j in range(110):
-        #     if j<=65:
-        #         def_superior = -3
-        #         def_inferior = -3 + 0.2*j
-        #         tipo = f"1-{j}"
-        #     elif j<=90:
-        #         def_superior = -3
-        #         def_inferior = 10+(j-65)*2
-        #         tipo = f"2-{j}"
-        #     else:
-        #         def_superior = -3 + (j-90) * 0.3
-        #         def_inferior = 60
-        #         tipo = f"3-{j}"
-            result.append((def_superior/1000, def_inferior/1000, tipo))
-        lista_invertida = [(x[1], x[0], "-" + x[2]) for x in result]
-        return result + lista_invertida
+                tipo = 5
+            # if self.def_de_rotura_a_pasivo*1000 > def_inferior:
+            #     for j in range(291,301):
+            lista_de_planos.append((def_superior/1000, def_inferior/1000, tipo, j))
+        lista_invertida = [(x[1], x[0], -x[2], x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
+        return lista_de_planos + lista_invertida
 
     def obtener_angulo_plano_de_carga(self):
         rows_n = self.excel_wb.get_n_rows_after_value("INCLINACIÓN DEL PLANO DE CARGA", 5)
+        return self.excel_wb.get_value("E", rows_n[2])  # TODO mejorar
 
     def obtener_matriz_acero_pasivo(self):
         lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS", "ARMADURAS PRETENSADAS"))
@@ -227,8 +252,8 @@ class FindInitialDeformation:
             x, y, d = self.obtener_valores_acero_tabla(fila)
             if d == 0:
                 continue
-            xg = round(x*100 - self.XG, 5)
-            yg = round(y*100 - self.YG, 5)
+            xg = round(x - self.XG, 5)
+            yg = round(y - self.YG, 5)
             resultado.append(BarraAceroPasivo(xg, yg, d))
         return resultado
 
@@ -241,13 +266,14 @@ class FindInitialDeformation:
 
     def setear_propiedades_acero_pasivo(self):
         try:
-            tipo = self.excel_wb.get_value("C", "5")
+            tipo = self.excel_wb.get_value("C", "6")
             values = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo)
             for k, v in values.items():
                 self.__setattr__(k, v)
             fy = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo.upper())["fy"]
             BarraAceroPasivo.E = 200000
             BarraAceroPasivo.fy = fy
+            BarraAceroPasivo.eu = self.def_de_rotura_a_pasivo
         except Exception:
             raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
 
@@ -258,14 +284,14 @@ class FindInitialDeformation:
             x, y, area = self.obtener_valores_acero_tabla(fila)
             if area == 0:
                 continue
-            xg = round(x * 100 - self.XG, 5)
-            yg = round(y * 100 - self.YG, 5)
+            xg = round(x - self.XG, 5)
+            yg = round(y - self.YG, 5)
             resultado.append(BarraAceroPretensado(xg, yg, area))
         return resultado
 
     def setear_propiedades_acero_activo(self):
         try:
-            tipo = self.excel_wb.get_value("C", "7")
+            tipo = self.excel_wb.get_value("C", "8")
             tipo = tipo.upper()
             values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo)
             for k, v in values.items():
@@ -293,7 +319,7 @@ class FindInitialDeformation:
             for fila_n in self.excel_wb.get_n_rows_after_value("Nodo nº", cantidad_de_nodos+1, rows_range=filas_contorno)[1:]:
                 x = self.excel_wb.get_value("C", fila_n)
                 y = self.excel_wb.get_value("E", fila_n)
-                coordenadas_nodos.append(Nodo(x*100, y*100))
+                coordenadas_nodos.append(Nodo(x, y))  # Medidas en centímetros
             contornos[str(i+1)] = Contorno(coordenadas_nodos, signo, ordenar=True)
             coordenadas_nodos = []
         dx, dy = self.get_discretizacion()
@@ -304,11 +330,9 @@ class FindInitialDeformation:
         rows_range = self.excel_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", 5, rows_range=range(40, 300))
         dx = self.excel_wb.get_value_on_the_right("ΔX =", rows_range)
         dy = self.excel_wb.get_value_on_the_right("ΔY =", rows_range)
-        return dx * 100, dy * 100  # En centímetros
+        return dx, dy  # En centímetros
 
-    def function_to_miminize(self, c):
-        (ec, phix, phiy) = c
-        return self.calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(ec, phix, phiy)
+
 
     def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
@@ -358,7 +382,8 @@ class FindInitialDeformation:
         return [sumF, Mx, My]
 
 
-    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(self,EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
+    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
+            self, EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
         y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
         sumFA = sumFP = sumFH = 0
         MxA = MxAP = MxH = 0
@@ -436,10 +461,4 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
 
 
-resolver = FindInitialDeformation(0.00521)
-
-
-
-
-
-
+resolver = FindInitialDeformation()

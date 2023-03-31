@@ -7,6 +7,7 @@ class BarraAceroPasivo():
     E = None
     fy = None
     ey = None
+    eu = None
 
     def __init__(self, x, y, d):
         """Antes de inicializar una instancia de esta clase, los valores de fy [tension de fluencia del acero] y
