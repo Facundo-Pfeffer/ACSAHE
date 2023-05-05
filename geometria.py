@@ -265,7 +265,7 @@ class Poligono(object):
             plt.text(self.xg, self.yg, texto_a_mostrar)
 
 
-    def obtener_poligono_intersección(self, otro_poligono):
+    def obtener_poligono_interseccion(self, otro_poligono):
         """Obtiene el poligono que resulta de intersectar self con otro_poligono"""
         lista_nodos_interseccion = self & otro_poligono
         if not lista_nodos_interseccion:
@@ -321,7 +321,7 @@ class Poligono(object):
         return not(-tolerancia <= nueva_area <= tolerancia or nueva_x == float("inf") or nueva_y == float("inf"))
 
     def __and__(self, otro_poligono):
-        """Devuelve los nodos de intersección de dos poligonos"""
+        """Devuelve los nodos de interseccion de dos poligonos"""
         lista_nodos_interseccion = []
         for segmento_contorno in self.segmentos_borde:
             for segmento_rectangulo in otro_poligono.segmentos_borde:
@@ -427,7 +427,7 @@ class Contorno(Poligono):
         while condicion_y(y):
             while condicion_x(x):
                 rectangulo_diferencial = RectanguloDiferencial(ubicacion_centro=Nodo(x, y), medidas=(dx, dy))
-                rectangulo_diferencial = rectangulo_diferencial.obtener_poligono_intersección(self)  # recortando con bordes de contorno
+                rectangulo_diferencial = rectangulo_diferencial.obtener_poligono_interseccion(self)  # recortando con bordes de contorno
                 lista_de_elementos.append(rectangulo_diferencial)
                 x = x + direccion[0]*dx
             y = y + direccion[1]*dy
@@ -508,7 +508,7 @@ class SeccionGenerica(object):
 
     def mostrar_contornos_3d(self, ecuacion_plano_a_desplazar=None):
         fig = plt.figure()
-        ax = fig.gca(projection='3d')
+        ax = fig.add_subplot(projection='3d')
         for contorno_negativo in self.contornos_negativos:
             contorno_negativo.cargar_poligono_para_mostrar(
                 indice_color=2, espesor=2, tridimensional=True, ec_plano_3d=ecuacion_plano_a_desplazar,

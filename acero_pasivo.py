@@ -3,7 +3,7 @@ import math
 
 
 class BarraAceroPasivo():
-    tipos_de_acero_y_valores = {"ADN 420": {"fy": 420}, "ADN 500": {"fy": 500}, "ADN 220": {"fy": 220}}
+    tipos_de_acero_y_valores = {"ADN 420": {"fy": 420}, "ADN 500": {"fy": 500}, "AL 220": {"fy": 220}}
     E = None
     fy = None
     ey = None

@@ -7,12 +7,16 @@ from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
+import warnings
 
 
 class FindInitialDeformation:
     def __init__(self):
-        self.excel_wb = ExcelManager("DISGHA Prueba - PRETENSADO EJEMPLO 7.4 LIBRO + PASIVA.xlsm")
+        file_name = "Archivos Excel/PLANILLA SCRATCH.xlsm"
+        self.excel_wb = ExcelManager(file_name, "Ingreso de Datos")
+        self.armaduras_pasivas_wb = ExcelManager(file_name, "Armaduras Pasivas")
         self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
+        warnings.filterwarnings("error")
 
         self.def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
         self.def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
@@ -22,9 +26,6 @@ class FindInitialDeformation:
 
         self.setear_propiedades_acero_pasivo()
         self.setear_propiedades_acero_activo()
-
-        self.planos_de_deformacion = self.obtener_planos_de_deformacion()
-        self.mostrar_planos_de_deformacion()
 
 
         self.dx, self.dy = self.get_discretizacion()
@@ -39,6 +40,9 @@ class FindInitialDeformation:
         self.mostrar_seccion()
 
         self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
+
+        self.planos_de_deformacion = self.obtener_planos_de_deformacion()
+        self.mostrar_planos_de_deformacion()
 
         ec, phix, phiy = self.obtener_plano_deformación_inicial()
         self.print_result_tridimensional(ec, phix, phiy)
@@ -64,7 +68,7 @@ class FindInitialDeformation:
         return min(def_max_acero_pasivo, def_max_acero_activo)
 
     def obtener_def_de_rotura_a_pasivo(self):
-        value = self.excel_wb.get_value("E", 6)  # TODO mejorar
+        value = self.armaduras_pasivas_wb.get_value("B", 6)  # TODO mejorar
         return value
 
     def obtener_def_de_pretensado_inicial(self):
@@ -80,6 +84,7 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_discretizacion_2d()
         plt.title("Sección y Discretización")
         plt.axis('equal')
+        plt.show()
 
     def mostrar_planos_de_deformacion(self):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -87,7 +92,7 @@ class FindInitialDeformation:
         for p_def in self.planos_de_deformacion:
             plt.title("Planos de Deformación")
             tipo = p_def[2]
-            if tipo > 0:
+            if tipo >= 0:
                 plt.plot([-p_def[0], -p_def[1]], [1,-1], c=lista_colores[tipo], linewidth=2, zorder=1)
         plt.show()
 
@@ -125,7 +130,7 @@ class FindInitialDeformation:
             # plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
             # plt.annotate(plano_def[2], (x, y))
             # plt.annotate(str(plano_def), (x,y))
-
+        plt.title("Rultado final para pivot = 9 %")
         plt.show()
 
     def asignar_deformacion_hormigon_a_elementos_pretensados(self):
@@ -135,18 +140,18 @@ class FindInitialDeformation:
 
     def iterar(self):
         lista_de_puntos = []
-        for plano_de_deformacion in self.planos_de_deformacion:
-            try:
+        try:
+            for plano_de_deformacion in self.planos_de_deformacion:
                 sol = fsolve(self.obtener_theta_para_plano_de_carga, 0, args=plano_de_deformacion, xtol=0.0001,
                              full_output=1)
                 theta, diferencia_plano_de_carga = sol[0][0], sol[1]['fvec']
-                if abs(diferencia_plano_de_carga) < 2:
+                if abs(diferencia_plano_de_carga) < 1:
                     sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
                     lista_de_puntos.append([sumF, self.obtener_momento_resultante(Mx, My), plano_de_deformacion, plano_de_deformacion[2], phi])
                 else:  # Punto Descartado, no se encontró solución.
                     pass
-            except RuntimeWarning as e:
-                continue
+        except Exception as e:
+            pass
 
         return lista_de_puntos
 
@@ -155,7 +160,9 @@ class FindInitialDeformation:
     def obtener_resultante_para_theta_y_def(self, theta, *plano_de_deformacion):
         EEH_girado, EA_girado, EAP_girado = self.calculo_distancia_eje_neutro_de_elementos(theta)
         EEH_girado.sort(key=lambda elemento_h: elemento_h.y_girado)
-        ecuacion_plano_deformacion = self.obtener_ecuacion_plano_deformacion(EEH_girado, plano_de_deformacion)
+        EA_girado.sort(key=lambda elemento_a: elemento_a.y_girado)
+        EAP_girado.sort(key=lambda elemento_ap: elemento_ap.y_girado)
+        ecuacion_plano_deformacion = self.obtener_ecuacion_plano_deformacion(EEH_girado, EA_girado, EAP_girado, plano_de_deformacion)
         sumF, Mx, My, phi = self.calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion)
         return sumF, Mx, My, phi
 
@@ -188,12 +195,34 @@ class FindInitialDeformation:
         return inclinacion_plano_de_carga
 
 
-    def obtener_ecuacion_plano_deformacion(self, EEH_girado, plano_de_deformacion):
-        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
-        def_max, def_min = plano_de_deformacion[0], plano_de_deformacion[1]
-        A = (def_max-def_min)/(y_max-y_min)
-        B = def_min-A*y_min
-        return lambda y_girado: y_girado*A+B
+    def obtener_ecuacion_plano_deformacion(self, EEH_girado, EA_girado, EAP_girado, plano_de_deformacion):
+        """Construye la ecuación de una recta que pasa por los puntos (y_positivo,def_1) (y_negativo,def_2).
+        y_positivo e y_negativo seran la distancia al eje neutro del elemento de hormigon mas comprimido, o
+        de la barra de acero (pasivo o activo) mas traccionada. Lo positivo o negativo depende de que lado del eje neutro
+        se encuentra el analisis."""
+        try:
+
+            def_1, def_2 = plano_de_deformacion[0], plano_de_deformacion[1]
+            y_positivo = self.obtener_y_determinante_positivo(def_1, EA_girado, EAP_girado, EEH_girado)
+            y_negativo = self.obtener_y_determinante_negativo(def_2, EA_girado, EAP_girado, EEH_girado)
+
+            A = (def_1-def_2)/(y_positivo-y_negativo)
+            B = def_2-A*y_negativo
+            return lambda y_girado: y_girado*A+B
+        except RuntimeWarning as e:
+            print(e)
+
+    def obtener_y_determinante_positivo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
+        """Lo positivo indica que se encuentra con coordendas y_girado positivas (de un lado del eje neutro)"""
+        if def_extrema <= 0:
+            return EEH_girado[-1].y_girado  # Maxima fibra comprimida hormigón
+        return max(EA_girado[-1].y_girado, EAP_girado[-1].y_girado) # Armadura más traccionada (más alejada eje neutro)
+
+    def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
+        """Lo negativco indica que se encuentra con coordendas y_girado negativas (de un lado del eje neutro)"""
+        if def_extrema <= 0:
+            return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
+        return min(EA_girado[0].y_girado, EAP_girado[0].y_girado)  # Armadura más traccionada (más alejada eje neutro)
 
     def calculo_distancia_eje_neutro_de_elementos(self, theta):
         EEH_girado, EA_girado, EAP_girado = self.EEH.copy(), self.EA.copy(), self.EAP.copy()
@@ -229,16 +258,17 @@ class FindInitialDeformation:
                 tipo = 3
             elif j>200 and j<=225:
                 def_superior = -3
-                def_inferior = 10 + (j-200)*2
+                def_inferior = 10 + (j-200)*(self.deformacion_maxima_de_acero*1000-10)/25
                 tipo = 4
             else:
                 def_superior = -3+(j-225)*0.15
-                def_inferior = 60
+                def_inferior = self.deformacion_maxima_de_acero * 1000
                 tipo = 5
             # if self.def_de_rotura_a_pasivo*1000 > def_inferior:
             #     for j in range(291,301):
             lista_de_planos.append((def_superior/1000, def_inferior/1000, tipo, j))
         lista_invertida = [(x[1], x[0], -x[2], x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
+        lista_invertida.append((self.deformacion_maxima_de_acero, self.deformacion_maxima_de_acero, 0, 0))
         return lista_de_planos + lista_invertida
 
     def obtener_angulo_plano_de_carga(self):
@@ -246,7 +276,7 @@ class FindInitialDeformation:
         return self.excel_wb.get_value("E", rows_n[2])  # TODO mejorar
 
     def obtener_matriz_acero_pasivo(self):
-        lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS", "ARMADURAS PRETENSADAS"))
+        lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"))
         resultado = MatrizAceroPasivo()
         for fila in lista_filas[5:-1]:  #TODO mejorar
             x, y, d = self.obtener_valores_acero_tabla(fila)
@@ -278,7 +308,7 @@ class FindInitialDeformation:
             raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
 
     def obtener_matriz_acero_pretensado(self):
-        lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS PRETENSADAS", "DISCRETIZACIÓN DE LA SECCIÓN"))
+        lista_filas = self.excel_wb.get_rows_range_between_values(("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"))
         resultado = MatrizAceroActivo()
         for fila in lista_filas[5:-1]:  #TODO mejorar
             x, y, area = self.obtener_valores_acero_tabla(fila)
@@ -309,7 +339,7 @@ class FindInitialDeformation:
         return self.excel_wb.get_value("G", contorno[0])
 
     def obtener_matriz_hormigon(self):
-        filas_hormigon = self.excel_wb.get_rows_range_between_values(("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS"))
+        filas_hormigon = self.excel_wb.get_rows_range_between_values(("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"))
         lista_filas_contornos = self.excel_wb.subdivide_range_in_filled_ranges("B", filas_hormigon)
         contornos = {}
         coordenadas_nodos = []
