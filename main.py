@@ -12,7 +12,7 @@ import warnings
 
 class FindInitialDeformation:
     def __init__(self):
-        file_name = "Archivos Excel/PLANILLA SCRATCH.xlsm"
+        file_name = "Archivos Excel/PLANILLA SCRATCH - Centrada.xlsm"
         self.excel_wb = ExcelManager(file_name, "Ingreso de Datos")
         self.armaduras_pasivas_wb = ExcelManager(file_name, "Armaduras Pasivas")
         self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
@@ -97,14 +97,11 @@ class FindInitialDeformation:
         plt.show()
 
     def mostrar_resultado(self, lista_resultados):
+        lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
+
+
         X = []
         Y = []
-        for resultado in lista_resultados:
-            sumF, M, plano_def, tipo, phi = resultado
-            x = M/100
-            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
-            X.append(x)
-            Y.append(y)
 
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
@@ -121,15 +118,21 @@ class FindInitialDeformation:
         ax.xaxis.set_ticks_position('bottom')
         ax.yaxis.set_ticks_position('left')
 
-        plt.scatter(X, Y, c="r", marker=".")
         for resultado in lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
-            x = M/100  # kN/m²
-            y = -sumF  # kN
-            # plt.annotate(str(phi), (x,y))
-            # plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
-            # plt.annotate(plano_def[2], (x, y))
-            # plt.annotate(str(plano_def), (x,y))
+            x = M/100
+            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+            X.append(x)
+            Y.append(y)
+            plt.scatter(x, y, c=lista_colores[abs(tipo)], marker="." if tipo>=0 else "x")
+        # for resultado in lista_resultados:
+        #     sumF, M, plano_def, tipo, phi = resultado
+        #     x = M/100  # kN/m²
+        #     y = -sumF  # kN
+        #     # plt.annotate(str(phi), (x,y))
+        #     # plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
+        #     # plt.annotate(plano_def[2], (x, y))
+        #     # plt.annotate(str(plano_def), (x,y))
         plt.title("Rultado final para pivot = 9 %")
         plt.show()
 
@@ -243,7 +246,7 @@ class FindInitialDeformation:
         """Obtiene una lista de los planos de deformación últimos a utilizarse para determinar los estados de resistencia
         últimos, cada elemento de esta lista representa, en principio, un punto sobre el diagrama de interacción."""
         lista_de_planos = []
-        for j in range(285):
+        for j in range(300):
             if j <= 25:
                 def_superior = -3
                 def_inferior = -3 + 0.1*j
@@ -260,15 +263,18 @@ class FindInitialDeformation:
                 def_superior = -3
                 def_inferior = 10 + (j-200)*(self.deformacion_maxima_de_acero*1000-10)/25
                 tipo = 4
-            else:
+            elif j<=285:
                 def_superior = -3+(j-225)*0.15
                 def_inferior = self.deformacion_maxima_de_acero * 1000
                 tipo = 5
+            else:
+                def_superior = 6 + (j-285)/14 * (self.deformacion_maxima_de_acero * 1000-6)
+                def_inferior = self.deformacion_maxima_de_acero * 1000
+                tipo = 6
             # if self.def_de_rotura_a_pasivo*1000 > def_inferior:
             #     for j in range(291,301):
             lista_de_planos.append((def_superior/1000, def_inferior/1000, tipo, j))
         lista_invertida = [(x[1], x[0], -x[2], x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
-        lista_invertida.append((self.deformacion_maxima_de_acero, self.deformacion_maxima_de_acero, 0, 0))
         return lista_de_planos + lista_invertida
 
     def obtener_angulo_plano_de_carga(self):
