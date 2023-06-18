@@ -4,14 +4,14 @@ import numpy as np
 import math
 from copy import copy as CopyObject
 
+tolerancia = 10**-13
 
 class Nodo(object):
     def __init__(self, x: (int, float), y: (int, float)):
         self.x = x
         self.y = y
 
-    def __eq__(self, otro_nodo):
-        tolerancia = 0.00000000000004
+    def __eq__(self, otro_nodo):  # Determinar si dos puntos son iguales, bajo el valor de tolerancia
         return self.x - tolerancia <= otro_nodo.x <= self.x + tolerancia and self.y - tolerancia <= otro_nodo.y <= self.y + tolerancia
 
 class ListaDeNodos(object):
@@ -27,6 +27,7 @@ class ListaDeNodos(object):
 
 
 class Segmento(object):
+
     def __init__(self, nodo_1: Nodo, nodo_2: Nodo):
         self.nodo_1 = nodo_1
         self.nodo_2 = nodo_2
@@ -42,13 +43,12 @@ class Segmento(object):
         return a, b, c
 
     def determinar_si_nodo_esta_en_rango(self, nodo):
-        tolerancia = 0.00000000000004 # TODO verificar si el segmento es vertical o horizontal (para así verificar unicamente en la otra direccion)
         xmin, xmax = self.extremos_x
         ymin, ymax = self.extremos_y
         return xmin - tolerancia <= nodo.x <= xmax + tolerancia and ymin - tolerancia <= nodo.y <= ymax + tolerancia
 
     def determinar_si_nodo_pertenece_a_segmento(self, nodo):
-        return self.recta_segmento.ecuacion_recta(nodo) == 0 and  self.determinar_si_nodo_esta_en_rango(nodo)
+        return self.recta_segmento.ecuacion_recta(nodo) == 0 and self.determinar_si_nodo_esta_en_rango(nodo)
 
     def extremos_segmento(self):
         extramos_x = (min(self.nodo_1.x, self.nodo_2.x), max(self.nodo_1.x, self.nodo_2.x))
@@ -99,8 +99,7 @@ class Recta(object):
     def __and__(self, otra_recta):
         """Intersecta las rectas
         :param otra_recta:
-        :return Nodo or None:"""
-        tolerancia = 0.000000000000001
+        :return Nodo de intersección or None si no se encuentran"""
         x1, y1, x2, y2 = self.nodo_1.x, self.nodo_1.y, self.nodo_2.x, self.nodo_2.y
         x3, y3, x4, y4 = otra_recta.nodo_1.x, otra_recta.nodo_1.y, otra_recta.nodo_2.x, otra_recta.nodo_2.y
         den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
@@ -114,7 +113,7 @@ class Recta(object):
 class Poligono(object):
 
     def __init__(self, nodos, ordenar=False):
-        self.nodos_extremos = nodos if not ordenar else self.ordenar_nodos_antihorario(nodos)
+        self.nodos_extremos = nodos if not ordenar else self.ordenar_nodos_poligono_convexo_antihorario(nodos)
         self.x = [nodo.x for nodo in self.nodos_extremos]
         self.y = [nodo.y for nodo in self.nodos_extremos]
         self.total_de_nodos = len(nodos)
@@ -130,7 +129,8 @@ class Poligono(object):
         self.area_original = valor_area
 
     @staticmethod
-    def ordenar_nodos_antihorario(nodos=None):
+    def ordenar_nodos_poligono_convexo_antihorario(nodos=None):
+        """Ordena los nodos en sentido antihorario, cuando el polígono sea CONVEXO. """
         if nodos is None:
             return None
         x_array = np.array([nodo.x for nodo in nodos])
@@ -265,6 +265,7 @@ class Poligono(object):
             plt.text(self.xg, self.yg, texto_a_mostrar)
 
 
+
     def obtener_poligono_interseccion(self, otro_poligono):
         """Obtiene el poligono que resulta de intersectar self con otro_poligono"""
         lista_nodos_interseccion = self & otro_poligono
@@ -285,40 +286,56 @@ class Poligono(object):
 
 
     def restar_con_otro_poligono(self, otro_poligono):
-        """Resta al elemento self el complemento con otro_poligono"""
-        nodos_interseccion = self & otro_poligono
-        if not nodos_interseccion:  # no hay interseccion
-            return self
-        # Determinar que nodos de otro_poligono pertenecen a self
-        for nodo in otro_poligono.nodos_extremos:
-            if self.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo):
-                nodos_interseccion.append(nodo)
-        for nodo_pos in self.nodos_extremos:  # Determinar que nodos de self pertenecen a otro_poligono
-            if otro_poligono.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo_pos):
-                nodos_interseccion.append(nodo_pos)
-        nodos_interseccion = ListaDeNodos(nodos_interseccion).eliminar_duplicados()
-        if len(nodos_interseccion) <= 2:
+        """Resta al elemento self el complemento con otro_poligono.
+        :param otro_poligono: polígono que se le restará a self.
+        :return el mismo elemento self, pero modificado por la resta."""
+
+        lista_de_nodos_de_interssecion = self.obtener_nodos_compartidos_entre_poligonos(self, otro_poligono)
+
+        if len(lista_de_nodos_de_interssecion) <= 2:
             return self
 
-        pol_int = Poligono(nodos_interseccion, ordenar=True)
-        if self.validar_si_es_igual_a(pol_int):  # Si la interseccion es igual al mismo poligono, entonces debe ser eliminado
+        poligono_interno = Poligono(lista_de_nodos_de_interssecion, ordenar=True)
+
+        if self.area_y_centro_son_iguales(poligono_1=self, poligono_2=poligono_interno):
+            # Si la interseccion es igual al mismo poligono, será eliminado.
             return None
-        nueva_area = self.area - pol_int.area
-        nueva_x, nueva_y = (self.area*self.xg - pol_int.area*pol_int.xg)/nueva_area, (self.area*self.yg - pol_int.area*pol_int.yg)/nueva_area
-        if not self.validar_nuevos_parametros_poligono(nueva_area, nueva_x, nueva_y):
+
+        nueva_area = self.area - poligono_interno.area
+        nueva_x = (self.area*self.xg - poligono_interno.area*poligono_interno.xg)/nueva_area
+        nueva_y = (self.area*self.yg - poligono_interno.area*poligono_interno.yg)/nueva_area
+
+        if not self.nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):
             return None
         self.numero_de_modificaciones = self.numero_de_modificaciones + 1
 
         self.area = nueva_area
         self.xg, self.yg = nueva_x, nueva_y
         self.nodo_centroide = Nodo(nueva_x, nueva_y)
-        self.nodos_interseccion_lista = nodos_interseccion + self.nodos_interseccion_lista
+        self.nodos_interseccion_lista = lista_de_nodos_de_interssecion + self.nodos_interseccion_lista
         return self  # self modificado
 
     @staticmethod
-    def validar_nuevos_parametros_poligono(nueva_area, nueva_x, nueva_y):
-        tolerancia = 0.00000000000004
+    def nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):  # Criterio: área=0|nodo en infinito numérico.
         return not(-tolerancia <= nueva_area <= tolerancia or nueva_x == float("inf") or nueva_y == float("inf"))
+    @staticmethod
+    def obtener_nodos_compartidos_entre_poligonos(poligono_1, poligono_2):
+        """Devuelve una lista de:
+        Aquellos nodos que intersectan alguno de los bordes entre los polígonos
+        Los nodos de poligono_1 que se encuentran dentro de poligono_2, y viceversa."""
+
+        lista_nodos_interseccion = poligono_1 & poligono_2  # Intersección de bordes
+        if not lista_nodos_interseccion:  # no hay intersección
+            return []
+
+        for nodo in poligono_2.nodos_extremos:  # Determinar qué nodos de otro_poligono pertenecen a self
+            if poligono_1.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo):
+                lista_nodos_interseccion.append(nodo)
+        for nodo_pos in poligono_1.nodos_extremos:  # Determinar qué nodos de self pertenecen a otro_poligono
+            if poligono_2.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo_pos):
+                lista_nodos_interseccion.append(nodo_pos)
+        nodos_interseccion = ListaDeNodos(lista_nodos_interseccion).eliminar_duplicados()
+        return nodos_interseccion
 
     def __and__(self, otro_poligono):
         """Devuelve los nodos de interseccion de dos poligonos"""
@@ -340,9 +357,12 @@ class Poligono(object):
         intersecciones = poligono_mayor & self
         return True if not intersecciones else False
 
-    def validar_si_es_igual_a(self, otro_poligono):
-        tolerancia = 0.00000000004
-        return otro_poligono.area - tolerancia <= self.area <=otro_poligono.area + tolerancia and otro_poligono.xg - tolerancia <= self.xg <=otro_poligono.xg + tolerancia and otro_poligono.yg - tolerancia <= self.yg <=otro_poligono.yg + tolerancia
+    @staticmethod
+    def area_y_centro_son_iguales(poligono_1, poligono_2):
+        """Valida si dos poligonos son iguales"""
+        return poligono_2.area - tolerancia <= poligono_1.area <=poligono_2.area + tolerancia and\
+            poligono_2.xg - tolerancia <= poligono_1.xg <=poligono_2.xg + tolerancia and\
+            poligono_2.yg - tolerancia <= poligono_1.yg <=poligono_2.yg + tolerancia
 
     def desplazar_sistema_de_referencia(self, desp_x, desp_y):
         self.xg = self.xg + desp_x

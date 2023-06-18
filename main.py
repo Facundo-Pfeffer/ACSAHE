@@ -2,11 +2,13 @@ from excel_manager import ExcelManager
 from acero_pretensado import BarraAceroPretensado
 from acero_pasivo import BarraAceroPasivo
 from hormigon import Hormigon
-from geometria import Nodo, Contorno, Recta, SeccionGenerica
+from geometria import Nodo, Contorno, SeccionGenerica
 from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import math
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
+import traceback
+import numpy as np
 
 import warnings
 
@@ -166,7 +168,8 @@ class FindInitialDeformation:
                 else:  # Punto Descartado, no se encontró solución.
                     self.lista_planos_sin_solucion.append(f"{plano_de_deformacion}\n{sol}")
         except Exception as e:
-            pass
+            traceback.print_exc()
+            print(e)
 
         return lista_de_puntos
 
@@ -251,7 +254,7 @@ class FindInitialDeformation:
         return EEH_girado, EA_girado, EAP_girado
 
     def distancia_eje_rotado(self, elemento, angulo):
-        angulo_rad = angulo * math.pi / 180
+        angulo_rad = math.radians(angulo[0] if type(angulo) == np.ndarray else angulo)  # Transformación interna, por las librerías utilizadas.
         value = -elemento.xg * math.sin(angulo_rad) + elemento.yg * math.cos(angulo_rad)
         return value
 
