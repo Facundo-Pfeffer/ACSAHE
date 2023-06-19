@@ -2,7 +2,7 @@ from excel_manager import ExcelManager
 from acero_pretensado import BarraAceroPretensado
 from acero_pasivo import BarraAceroPasivo
 from hormigon import Hormigon
-from geometria import Nodo, Contorno, SeccionGenerica
+from geometria import Nodo, Contorno, SeccionGenerica, Segmento
 from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import math
 import matplotlib.pyplot as plt
@@ -14,8 +14,8 @@ import warnings
 
 
 class FindInitialDeformation:
-    def __init__(self):
-        file_name = "Archivos Excel/PLANILLA SCRATCH.xlsm"
+    def __init__(self, file_name):
+        self.file_name = file_name
         self.excel_wb = ExcelManager(file_name, "Ingreso de Datos")
         self.armaduras_pasivas_wb = ExcelManager(file_name, "Armaduras Pasivas")
         self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
@@ -55,7 +55,7 @@ class FindInitialDeformation:
         self.lista_planos_sin_solucion = []
         lista_resultados = self.iterar()
         print(f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(lista_resultados)} puntos sin solución,"
-              f"\nTotal: {len(self.lista_planos_sin_solucion)+len(lista_resultados)}"
+              f"\nTotal: {len(self.lista_planos_sin_solucion) + len(lista_resultados)}"
               f"\nDetalles:"
               f"{self.lista_planos_sin_solucion}")
         self.medir_diferencias.sort(reverse=True)
@@ -86,15 +86,29 @@ class FindInitialDeformation:
         return value / 1000
 
     def mostrar_seccion(self):
-        # ax = plt.gca()
-        # ax.set_aspect('equal', adjustable='box')
-        fig, ax = self.EA.cargar_barras_como_circulos_para_mostrar()
-        self.EAP.cargar_barras_como_circulos_para_mostrar(fig, ax)
+        """Muestra la sección obtenida luego del proceso de discretización."""
+        plt.rcParams["font.family"] = "Times New Roman"
+        fig, ax = plt.subplots()
+        self.EA.cargar_barras_como_circulos_para_mostrar(ax)
+        self.EAP.cargar_barras_como_circulos_para_mostrar(ax)
         self.seccion_H.mostrar_contornos_2d()
         self.seccion_H.mostrar_discretizacion_2d()
+        self.mostrar_plano_de_carga(ax)
         plt.title("Sección y Discretización")
         plt.axis('equal')
         plt.show()
+
+    def mostrar_plano_de_carga(self, ax):
+        y1,y2 = ax.get_ylim()
+        print(y2)
+        x1,x2 = ax.get_xlim()
+        ecuacion_plano_carga = lambda x: math.tan(math.radians(90-self.angulo_plano_de_carga_esperado))*x
+
+        linea_plano_de_carga = Segmento(Nodo(x1, ecuacion_plano_carga(x1)),
+                 Nodo(x2, ecuacion_plano_carga(x2)))
+        linea_plano_de_carga.mostrar_segmento(linewidth=5, c="k")
+        plt.text(x2, ecuacion_plano_carga(x2)+1, f"Plano de Carga λ={self.angulo_plano_de_carga_esperado}°",
+                 rotation=90-self.angulo_plano_de_carga_esperado, fontsize=(y2-y1)/2.5)
 
     def mostrar_planos_de_deformacion(self):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -107,6 +121,8 @@ class FindInitialDeformation:
         plt.show()
 
     def mostrar_resultado(self, lista_resultados):
+        plt.rcParams["font.family"] = "Times New Roman"
+
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
 
         X = []
@@ -115,21 +131,19 @@ class FindInitialDeformation:
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
 
-        # Move left y-axis and bottim x-axis to centre, passing through (0,0)
-        ax.spines['left'].set_position('zero')
-        ax.spines['bottom'].set_position('zero')
+        plt.suptitle("  DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
+        plt.title(f"Archivo: {self.file_name.split('/')[-1]}\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
+                  fontsize=15, pad=40, style='italic')
+        plt.xticks(ha='right')
 
-        # Eliminate upper and right axes
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
+        ax.set_xlabel("Momento de Diseño [kNm]", loc="right", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Normal de Diseño [kN]", loc="top", rotation=0, rotation_mode="anchor", fontsize=12, fontweight='bold')
 
-        # Show ticks in the left and lower axes only
-        ax.xaxis.set_ticks_position('bottom')
-        ax.yaxis.set_ticks_position('left')
+        self.preparar_eje(ax)
 
         for resultado in lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
-            x = M / 100
+            x = M / 100  # Pasaje de kNcm a kNm
             y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
@@ -141,9 +155,36 @@ class FindInitialDeformation:
         #     #     # plt.annotate(str(phi), (x,y))
         #     #     plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
         #     plt.annotate(plano_def[3], (x, y))
-            # plt.annotate(str(plano_def), (x,y))
-        plt.title("Rultado")
+        # plt.annotate(str(plano_def), (x,y))
+
         plt.show()
+
+    @staticmethod
+    def preparar_eje(ax):
+        # Mueve al centro del diagrama al eje X e Y (por defecto, se sitúan en el extremo inferior izquierdo).
+        ax.yaxis.tick_right()
+
+
+        ax.spines['left'].set_position('zero')
+        ax.spines['bottom'].set_position('zero')
+
+        # Elimina los viejos ejes
+        ax.spines['right'].set_color('none')
+        ax.spines['top'].set_color('none')
+
+        # Agrega los 'tics' (marcas en el eje) en los trozos de ejes agregados
+        ax.xaxis.set_ticks_position('bottom')
+        ax.yaxis.set_ticks_position('left')
+
+
+        # Agregamos las grilla de referencia
+        ax.grid(which='major', color='#DDDDDD', linewidth=0.8)
+        ax.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.6)
+        ax.minorticks_on()
+
+
+        # Desplazamos los valores de y a la izquierda
+        return ax
 
     def asignar_deformacion_hormigon_a_elementos_pretensados(self):
         ec_plano = self.ec_plano_deformacion_elastica_inicial
@@ -217,31 +258,27 @@ class FindInitialDeformation:
 
     def obtener_ecuacion_plano_deformacion(self, EEH_girado, EA_girado, EAP_girado, plano_de_deformacion):
         """Construye la ecuación de una recta que pasa por los puntos (y_positivo,def_1) (y_negativo,def_2).
-        y_positivo e y_negativo seran la distancia al eje neutro del elemento de hormigon mas comprimido, o
-        de la barra de acero (pasivo o activo) mas traccionada. Lo positivo o negativo depende de que lado del eje neutro
-        se encuentra el analisis."""
-        try:
-
-            def_1, def_2 = plano_de_deformacion[0], plano_de_deformacion[1]
-            y_positivo = self.obtener_y_determinante_positivo(def_1, EA_girado, EAP_girado, EEH_girado)
-            y_negativo = self.obtener_y_determinante_negativo(def_2, EA_girado, EAP_girado, EEH_girado)
-            A = (def_1 - def_2) / (y_positivo - y_negativo)
-            B = def_2 - A * y_negativo
-            return lambda y_girado: y_girado * A + B
-        except RuntimeWarning as e:
-            print(e)
+        Y_positivo e y_negativo serán la distancia al eje neutro del elemento de hormigón más comprimido, o
+        de la barra de acero (pasivo o activo) más traicionada. Lo positivo o negativo depende de qué lado del
+        eje neutro se encuentra el análisis."""
+        def_1, def_2 = plano_de_deformacion[0], plano_de_deformacion[1]
+        y_positivo = self.obtener_y_determinante_positivo(def_1, EA_girado, EAP_girado, EEH_girado)
+        y_negativo = self.obtener_y_determinante_negativo(def_2, EA_girado, EAP_girado, EEH_girado)
+        A = (def_1 - def_2) / (y_positivo - y_negativo)
+        B = def_2 - A * y_negativo
+        return lambda y_girado: y_girado * A + B
 
     def obtener_y_determinante_positivo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
         """Lo positivo indica que se encuentra con coordendas y_girado positivas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:  # Compresión
             return EEH_girado[-1].y_girado  # Fibra de Hormigón más alejada
-        return max(EA_girado[-1].y_girado, EAP_girado[-1].y_girado)  # Armadura más traccionada (más alejada eje neutro)
+        return max(EA_girado[-1].y_girado, EAP_girado[-1].y_girado)  # Armadura más traccionada (más alejada del EN)
 
     def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
-        """Lo negativco indica que se encuentra con coordendas y_girado negativas (de un lado del eje neutro)"""
+        """Lo negativo indica que se encuentra con coordenadas y_girado negativas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:
             return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
-        return min(EA_girado[0].y_girado, EAP_girado[0].y_girado)  # Armadura más traccionada (más alejada eje neutro)
+        return min(EA_girado[0].y_girado, EAP_girado[0].y_girado)  # Armadura más traccionada (más alejada del EN)
 
     def calculo_distancia_eje_neutro_de_elementos(self, theta):
         EEH_girado, EA_girado, EAP_girado = self.EEH.copy(), self.EA.copy(), self.EAP.copy()
@@ -254,7 +291,8 @@ class FindInitialDeformation:
         return EEH_girado, EA_girado, EAP_girado
 
     def distancia_eje_rotado(self, elemento, angulo):
-        angulo_rad = math.radians(angulo[0] if type(angulo) == np.ndarray else angulo)  # Transformación interna, por las librerías utilizadas.
+        angulo_rad = math.radians(angulo[0] if type(
+            angulo) == np.ndarray else angulo)  # Transformación interna, por las librerías utilizadas.
         value = -elemento.xg * math.sin(angulo_rad) + elemento.yg * math.cos(angulo_rad)
         return value
 
@@ -276,7 +314,7 @@ class FindInitialDeformation:
                     def_inicial = -0.5
                     def_final = 0
                     def_superior = -3
-                    def_inferior = def_inicial + (def_final-def_inicial) * (j - 25) / (100 - 25)  # Hasta 0
+                    def_inferior = def_inicial + (def_final - def_inicial) * (j - 25) / (100 - 25)  # Hasta 0
                     tipo = 2
                 elif 100 < j <= 200:
                     def_superior = -3
@@ -322,7 +360,8 @@ class FindInitialDeformation:
         return 0 if abs(valor) <= tolerancia else valor
 
     def obtener_valores_acero_tabla(self, fila):
-        return self.excel_wb.get_value("C", fila), self.excel_wb.get_value("E", fila), self.excel_wb.get_value("G", fila)
+        return self.excel_wb.get_value("C", fila), self.excel_wb.get_value("E", fila), self.excel_wb.get_value("G",
+                                                                                                               fila)
 
     def setear_propiedades_acero_pasivo(self):
         try:
@@ -521,4 +560,4 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
 
 
-resolver = FindInitialDeformation()
+resolver = FindInitialDeformation(file_name="Archivos Excel/PLANILLA SCRATCH.xlsm")

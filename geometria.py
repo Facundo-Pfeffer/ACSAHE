@@ -2,9 +2,10 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from copy import copy as CopyObject
+import copy
 
 tolerancia = 10**-13
+
 
 class Nodo(object):
     def __init__(self, x: (int, float), y: (int, float)):
@@ -62,8 +63,8 @@ class Segmento(object):
         resultado = nodo_interseccion_rectas if self.determinar_si_nodo_esta_en_rango(nodo_interseccion_rectas) else None
         return resultado
 
-    # def mostrar_segmento(self):
-    #     plt.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y])
+    def mostrar_segmento(self, **kwargs):
+        plt.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y], **kwargs)
 
     def __and__(self, otro_segmento):
         result = self.recta_segmento & otro_segmento.recta_segmento  # Buscando interseccion
@@ -93,8 +94,8 @@ class Recta(object):
         c = y2*(x1-x2) + (y2-y1)*x2
         return a, b, c
 
-    # def mostrar_recta(self):
-    #     plt.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y])
+    def mostrar_recta(self):
+        plt.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y])
 
     def __and__(self, otra_recta):
         """Intersecta las rectas
@@ -122,10 +123,10 @@ class Poligono(object):
         self.area = valor_area
         self.nodo_centroide = self.determinar_centroide()
         self.xg, self.yg = self.nodo_centroide.x, self.nodo_centroide.y
-        # Se definen estos atributos para determinar si el elemento fue modificado por una interseccion (ver metodo)
+        # Se definen estos atributos para determinar si el elemento fue modificado por una intersección (ver método)
         self.nodos_interseccion_lista = []
         self.numero_de_modificaciones = 0
-        self.nodo_centroide_original = CopyObject(self.nodo_centroide)
+        self.nodo_centroide_original = copy.copy(self.nodo_centroide)
         self.area_original = valor_area
 
     @staticmethod
@@ -219,7 +220,7 @@ class Poligono(object):
 
     def obtener_3_nodos_x_indice(self, i_punto_1):
         """Obtiene el nodo en cuestión y los 2 nodos subsiguientes, basado en el índice del primer nodo.
-        Al quedar algun índice fuera de rango, se obtiene el primer o segundo elemento según corresponda."""
+        Al quedar algún índice fuera de rango, se obtiene el primer o segundo elemento según corresponda."""
         i_punto_2 = self.obtener_indice(i_punto_1, 1)
         i_punto_3 = self.obtener_indice(i_punto_1, 2)
         return self.nodos_extremos[i_punto_1], self.nodos_extremos[i_punto_2], self.nodos_extremos[i_punto_3]
@@ -413,18 +414,12 @@ class Contorno(Poligono):
     def discretizar_contorno(self, dx, dy):
         lista_de_elementos = self.obtener_lista_de_elementos_preliminar(dx, dy)
         lista_de_elementos.sort(key=lambda elemento: (elemento.y, elemento.x))
-
-        # for elemento in lista_de_elementos:
-        #     elemento.cargar_poligono_para_mostrar(indice_color=0, espesor=0.5)
-        # self.cargar_poligono_para_mostrar(indice_color=1, espesor=2)
-        # plt.title("Definicion de elementos inicial")
-        # plt.show()
-        lista_elem_validos = [elem for elem in lista_de_elementos if not (math.isnan(elem.xg) or math.isnan(elem.yg))] # Si la discretización coincide exactamente con los bordes del contorno, elementos con área cero y coordenadas no válidas deben ser limpiados
-        return self.eliminar_elementos_fuera_de_contorno(lista_elem_validos)
-
+        # Elementos con coordenadas no válidas deben ser limpiados
+        lista_elem_validos = [elem for elem in lista_de_elementos if not (math.isnan(elem.xg) or math.isnan(elem.yg))]
+        return self.eliminar_elementos_fuera_de_contorno(lista_elem_validos)  # Limpieza adicional de elementos no validos.
 
     def obtener_lista_de_elementos_preliminar(self, dx, dy):
-        """Obtiene la lista de elementos preliminarmente del rectangulo que contiene al contorno, para luego eliminar
+        """Obtiene la lista de elementos preliminarmente del rectángulo que contiene al contorno, para luego eliminar
         los elementos restantes."""
         lista_de_elementos = []
         lista_de_direcciones = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
@@ -435,8 +430,8 @@ class Contorno(Poligono):
         return lista_de_elementos
 
     def elementos_segun_direccion(self, x_partida, y_partida, dx, dy, direccion: tuple):
-        """La direccion de avance viene dada por una tupla tipo (±1; ±1), el primer termino indicando si es positivo
-        en x y el segundo si lo es en y."""
+        """La direccion de avance viene dada por una tupla tipo (±1; ±1), el primer término indicando si es positivo
+        en X y el segundo si lo es en Y."""
         x_max, y_max = max(self.x), max(self.y)
         x_min, y_min = min(self.x), min(self.y)
         lista_de_elementos = []
@@ -466,19 +461,18 @@ class Contorno(Poligono):
                 signo_semiplano_elemento = recta.ecuacion_recta(elemento_diferencial.nodo_centroide)
                 if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Si son de distinto signo, descartar el elemento
                     lista_de_elementos.remove(elemento_diferencial)
-        self.mostrar_contorno_y_discretizacion(lista_de_elementos)
         return lista_de_elementos
 
     def mostrar_contorno_y_discretizacion(self, lista_elementos):
         # Contorno
         X = [nodo.x for nodo in self.nodos_extremos]
         Y = [nodo.y for nodo in self.nodos_extremos]
-        # plt.plot(X, Y)
-        # for elemento in lista_elementos:
-        #     elemento.cargar_poligono_para_mostrar(indice_color=0, espesor=0.5)
-        # self.cargar_poligono_para_mostrar(indice_color=1)
-        # plt.title("Contorno y Discretizacion - pre eliminar elementos negativos")
-        # plt.show()
+        plt.plot(X, Y)
+        for elemento in lista_elementos:
+            elemento.cargar_poligono_para_mostrar(indice_color=0, espesor=0.5)
+        self.cargar_poligono_para_mostrar(indice_color=1)
+        plt.title("Contorno y Discretizacion - pre eliminar elementos negativos")
+        plt.show()
 
 
 class SeccionGenerica(object):
@@ -489,7 +483,6 @@ class SeccionGenerica(object):
         self.elementos = self.obtener_matriz_elementos_positivos()
         self.area, self.xg, self.yg = self.obtener_baricentro_y_area()
         self.cambiar_coordenadas_a_baricentro()
-        self.rango_x, self.rango_x = self.obtener_rango_valores_extremos()
 
     def obtener_matriz_elementos_positivos(self):
         result = []
@@ -542,7 +535,6 @@ class SeccionGenerica(object):
         for elemento in self.elementos:
             elemento.cargar_poligono_para_mostrar(indice_color=3, espesor=2, mostrar_centroide=True)
 
-
     def obtener_baricentro_y_area(self):
         area_total = 0
         sx = 0
@@ -560,7 +552,6 @@ class SeccionGenerica(object):
             contorno_pos.desplazar_sistema_de_referencia(desp_x=-self.xg, desp_y=-self.yg)
         for contorno_neg in self.contornos_negativos:
             contorno_neg.desplazar_sistema_de_referencia(desp_x=-self.xg, desp_y=-self.yg)
-
 
     @staticmethod
     def plot_to_buf(lista_de_elementos, height=2800, width=2800, inc=0.3):
