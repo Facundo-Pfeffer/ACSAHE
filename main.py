@@ -9,15 +9,16 @@ import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
 import traceback
 import numpy as np
+import os
 
 import warnings
 
 
 class FindInitialDeformation:
-    def __init__(self, file_name):
-        self.file_name = file_name
-        self.excel_wb = ExcelManager(file_name, "Ingreso de Datos")
-        self.armaduras_pasivas_wb = ExcelManager(file_name, "Armaduras Pasivas")
+    def __init__(self, file_path):
+        self.file_name = file_path.split(".")[0].split("/")[-1]
+        self.excel_wb = ExcelManager(file_path, "Ingreso de Datos")
+        self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
         self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
         warnings.filterwarnings("error")
 
@@ -39,33 +40,39 @@ class FindInitialDeformation:
 
         self.EA = self.obtener_matriz_acero_pasivo()
         self.EAP = self.obtener_matriz_acero_pretensado()
-        self.mostrar_seccion()
 
         self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
-
         self.planos_de_deformacion = self.obtener_planos_de_deformacion()
         self.mostrar_planos_de_deformacion()
 
+        self.guardar_seccion()
+
         ec, phix, phiy = self.obtener_plano_deformación_inicial()
-        self.print_result_tridimensional(ec, phix, phiy)
+        # self.print_result_tridimensional(ec, phix, phiy)
         self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec + math.tan(math.radians(phix)) * (y) + math.tan(
             math.radians(phiy)) * (x)
         self.asignar_deformacion_hormigon_a_elementos_pretensados()
 
         self.lista_planos_sin_solucion = []
-        lista_resultados = self.iterar()
-        print(f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(lista_resultados)} puntos sin solución,"
-              f"\nTotal: {len(self.lista_planos_sin_solucion) + len(lista_resultados)}"
+        self.lista_resultados = self.iterar()
+        print(f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(self.lista_resultados)} puntos sin solución,"
+              f"\nTotal: {len(self.lista_planos_sin_solucion) + len(self.lista_resultados)}"
               f"\nDetalles:"
-              f"{self.lista_planos_sin_solucion}")
-        self.medir_diferencias.sort(reverse=True)
-        print(self.medir_diferencias)
-        self.mostrar_resultado(lista_resultados)
+              # f"{self.lista_planos_sin_solucion}"
+              )
+        # self.medir_diferencias.sort(reverse=True)
+        # print(self.medir_diferencias)
+        self.guardar_resultado(blanco_y_negro=True)
 
     def obtener_plano_deformación_inicial(self):
+        if not self.EAP:  # Caso de Hormigón Armado
+            return 0, 0, 0
         resultado = fsolve(
-            self.converger_funcion_desplazamiento_elastico_inicial, [-self.def_de_pretensado_inicial, 0, 0])
-        ec, phix, phiy = resultado
+            self.converger_funcion_desplazamiento_elastico_inicial, [-self.def_de_pretensado_inicial, 0, 0], full_output=1)
+        if not (resultado[2]):
+            raise Exception("No se encontró deformación inicial que satisfaga las ecuaciones de equilibrio")
+        ec, phix, phiy = resultado[0]
+        print(f"Deformaciones iniciales (deformación elástica del hormigón)\nec: {ec}\nphix: {phix}\nphiy: {phiy}")
         return ec, phix, phiy
 
     def converger_funcion_desplazamiento_elastico_inicial(self, c):
@@ -85,7 +92,7 @@ class FindInitialDeformation:
         value = self.excel_wb.get_value("E", 8)  # TODO mejorar
         return value / 1000
 
-    def mostrar_seccion(self):
+    def construir_grafica_seccion(self):
         """Muestra la sección obtenida luego del proceso de discretización."""
         plt.rcParams["font.family"] = "Times New Roman"
         fig, ax = plt.subplots()
@@ -96,19 +103,29 @@ class FindInitialDeformation:
         self.mostrar_plano_de_carga(ax)
         plt.title("Sección y Discretización")
         plt.axis('equal')
+
+    def mostrar_seccion(self):
+        self.construir_grafica_seccion()
         plt.show()
 
-    def mostrar_plano_de_carga(self, ax):
-        y1,y2 = ax.get_ylim()
-        print(y2)
-        x1,x2 = ax.get_xlim()
-        ecuacion_plano_carga = lambda x: math.tan(math.radians(90-self.angulo_plano_de_carga_esperado))*x
+    def guardar_seccion(self):
+        print("Construyendo Gráfica de la sección")
+        path = f"Resultados/{self.file_name}"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self.construir_grafica_seccion()
+        print(f"Guardando sección en {path}")
+        plt.savefig(f"{path}/Sección.png")
 
+    def mostrar_plano_de_carga(self, ax):
+        y1, y2 = ax.get_ylim()
+        x1, x2 = ax.get_xlim()
+        ecuacion_plano_carga = lambda x: math.tan(math.radians(90-self.angulo_plano_de_carga_esperado))*x if self.angulo_plano_de_carga_esperado != 0 else y1 if x<0 else y2
         linea_plano_de_carga = Segmento(Nodo(x1, ecuacion_plano_carga(x1)),
-                 Nodo(x2, ecuacion_plano_carga(x2)))
+                 Nodo(x2, ecuacion_plano_carga(x2))) if self.angulo_plano_de_carga_esperado != 0 else Segmento(Nodo(0, ecuacion_plano_carga(x1)), Nodo(0, ecuacion_plano_carga(x2)))
         linea_plano_de_carga.mostrar_segmento(linewidth=5, c="k")
-        plt.text(x2, ecuacion_plano_carga(x2)+1, f"Plano de Carga λ={self.angulo_plano_de_carga_esperado}°",
-                 rotation=90-self.angulo_plano_de_carga_esperado, fontsize=(y2-y1)/2.5)
+        plt.text(linea_plano_de_carga.nodo_2.x,  linea_plano_de_carga.nodo_2.y+1, f"Plano de Carga λ={self.angulo_plano_de_carga_esperado}°",
+                 rotation=90-self.angulo_plano_de_carga_esperado, fontsize=10)
 
     def mostrar_planos_de_deformacion(self):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -120,7 +137,20 @@ class FindInitialDeformation:
                 plt.plot([-p_def[0], -p_def[1]], [1, -1], c=lista_colores[tipo], linewidth=2, zorder=1)
         plt.show()
 
-    def mostrar_resultado(self, lista_resultados):
+    def mostrar_resultado(self, blanco_y_negro=False):
+        self.construir_grafica_resultado(blanco_y_negro)
+        plt.show()
+
+    def guardar_resultado(self, blanco_y_negro=False):
+        print("Construyendo Gráfica de resultado")
+        path = f"Resultados/{self.file_name}"
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self.construir_grafica_resultado(blanco_y_negro)
+        print(f"Guardando Diagrama de Interacción en {path}/Diagrama de Interacción")
+        plt.savefig(f"{path}/Diagrama de Interacción.png")
+
+    def construir_grafica_resultado(self, blanco_y_negro=False):
         plt.rcParams["font.family"] = "Times New Roman"
 
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -132,7 +162,7 @@ class FindInitialDeformation:
         ax = fig.add_subplot(1, 1, 1)
 
         plt.suptitle("  DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
-        plt.title(f"Archivo: {self.file_name.split('/')[-1]}\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
+        plt.title(f"Archivo: {self.file_name}\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
                   fontsize=15, pad=40, style='italic')
         plt.xticks(ha='right')
 
@@ -141,13 +171,17 @@ class FindInitialDeformation:
 
         self.preparar_eje(ax)
 
-        for resultado in lista_resultados:
+        for resultado in self.lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
             x = M / 100  # Pasaje de kNcm a kNm
             y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
-            plt.scatter(x, y, c=lista_colores[abs(tipo)], marker="." if tipo >= 0 else "x")
+            plt.scatter(x, y,
+                        c=lista_colores[abs(tipo)] if blanco_y_negro is False else "k",
+                        marker="."
+                        # if tipo >= 0 else "x"
+                        )
         # for resultado in lista_resultados:
         #     sumF, M, plano_def, tipo, phi = resultado
         #     x = M / 100  # kN/m²
@@ -226,8 +260,6 @@ class FindInitialDeformation:
                                                                                            ecuacion_plano_deformacion)
         return sumF, Mx, My, phi
 
-    # def obtener_def_max_comp(self, plano_de_deformacion):
-
     def obtener_theta_para_plano_de_carga(self, theta, *plano_de_deformacion):
         sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
         ex = round(My / sumF, 5)
@@ -272,13 +304,13 @@ class FindInitialDeformation:
         """Lo positivo indica que se encuentra con coordendas y_girado positivas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:  # Compresión
             return EEH_girado[-1].y_girado  # Fibra de Hormigón más alejada
-        return max(EA_girado[-1].y_girado, EAP_girado[-1].y_girado)  # Armadura más traccionada (más alejada del EN)
+        return max(EA_girado[-1].y_girado if EAP_girado else 0, EAP_girado[-1].y_girado if EAP_girado else 0)  # Armadura más traccionada (más alejada del EN)
 
     def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
         """Lo negativo indica que se encuentra con coordenadas y_girado negativas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:
             return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
-        return min(EA_girado[0].y_girado, EAP_girado[0].y_girado)  # Armadura más traccionada (más alejada del EN)
+        return min(EA_girado[0].y_girado if EA_girado else 0, EAP_girado[0].y_girado if EAP_girado else 0)  # Armadura más traccionada (más alejada del EN)
 
     def calculo_distancia_eje_neutro_de_elementos(self, theta):
         EEH_girado, EA_girado, EAP_girado = self.EEH.copy(), self.EA.copy(), self.EAP.copy()
@@ -560,4 +592,4 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
 
 
-resolver = FindInitialDeformation(file_name="Archivos Excel/PLANILLA SCRATCH.xlsm")
+resolver = FindInitialDeformation(file_path="Archivos Excel/Sección Cajón.xlsm")
