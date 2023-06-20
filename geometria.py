@@ -511,9 +511,9 @@ class SeccionGenerica(object):
 
     def mostrar_contornos_2d(self):
         for contorno_negativo in self.contornos_negativos:
-            contorno_negativo.cargar_poligono_para_mostrar(indice_color=2, espesor=2)
+            contorno_negativo.cargar_poligono_para_mostrar(indice_color=2, espesor=1)
         for contorno_positivo in self.contornos_positivos:
-            contorno_positivo.cargar_poligono_para_mostrar(indice_color=1, espesor=2)
+            contorno_positivo.cargar_poligono_para_mostrar(indice_color=2, espesor=1)
 
     def mostrar_discretizacion_2d(self):
         for elemento in self.elementos:

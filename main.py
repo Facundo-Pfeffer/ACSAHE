@@ -45,7 +45,7 @@ class FindInitialDeformation:
         self.planos_de_deformacion = self.obtener_planos_de_deformacion()
         self.mostrar_planos_de_deformacion()
 
-        self.guardar_seccion()
+        self.mostrar_seccion()
 
         ec, phix, phiy = self.obtener_plano_deformación_inicial()
         # self.print_result_tridimensional(ec, phix, phiy)
@@ -101,8 +101,12 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_contornos_2d()
         self.seccion_H.mostrar_discretizacion_2d()
         self.mostrar_plano_de_carga(ax)
-        plt.title("Sección y Discretización")
+        plt.title("Sección y Discretización", fontsize=40, fontweight='bold', horizontalalignment='center')
         plt.axis('equal')
+        ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=20, fontweight='bold')
+        ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=20, fontweight='bold')
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
 
     def mostrar_seccion(self):
         self.construir_grafica_seccion()
@@ -124,8 +128,8 @@ class FindInitialDeformation:
         linea_plano_de_carga = Segmento(Nodo(x1, ecuacion_plano_carga(x1)),
                  Nodo(x2, ecuacion_plano_carga(x2))) if self.angulo_plano_de_carga_esperado != 0 else Segmento(Nodo(0, ecuacion_plano_carga(x1)), Nodo(0, ecuacion_plano_carga(x2)))
         linea_plano_de_carga.mostrar_segmento(linewidth=5, c="k")
-        plt.text(linea_plano_de_carga.nodo_2.x,  linea_plano_de_carga.nodo_2.y+1, f"Plano de Carga λ={self.angulo_plano_de_carga_esperado}°",
-                 rotation=90-self.angulo_plano_de_carga_esperado, fontsize=10)
+        plt.text(linea_plano_de_carga.nodo_2.x+2,  (linea_plano_de_carga.nodo_2.y+linea_plano_de_carga.nodo_1.y)/2-2, f"Plano de Carga λ={self.angulo_plano_de_carga_esperado}°",
+                 rotation=90-self.angulo_plano_de_carga_esperado, fontsize=15)
 
     def mostrar_planos_de_deformacion(self):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -161,7 +165,7 @@ class FindInitialDeformation:
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
 
-        plt.suptitle("  DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
+        plt.suptitle("    DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
         plt.title(f"Archivo: {self.file_name}\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
                   fontsize=15, pad=40, style='italic')
         plt.xticks(ha='right')
@@ -182,7 +186,7 @@ class FindInitialDeformation:
                         marker="."
                         # if tipo >= 0 else "x"
                         )
-        # for resultado in lista_resultados:
+        # for resultado in self.lista_resultados:
         #     sumF, M, plano_def, tipo, phi = resultado
         #     x = M / 100  # kN/m²
         #     y = -sumF  # kN
@@ -304,13 +308,20 @@ class FindInitialDeformation:
         """Lo positivo indica que se encuentra con coordendas y_girado positivas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:  # Compresión
             return EEH_girado[-1].y_girado  # Fibra de Hormigón más alejada
-        return max(EA_girado[-1].y_girado if EAP_girado else 0, EAP_girado[-1].y_girado if EAP_girado else 0)  # Armadura más traccionada (más alejada del EN)
+        lista_de_armaduras = []
+        lista_de_armaduras.extend(EA_girado)
+        lista_de_armaduras.extend(EAP_girado)
+        return max(x.y_girado for x in lista_de_armaduras)  # Armadura más traccionada (más alejada del EN)
 
     def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
         """Lo negativo indica que se encuentra con coordenadas y_girado negativas (de un lado del eje neutro)"""
         if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:
             return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
-        return min(EA_girado[0].y_girado if EA_girado else 0, EAP_girado[0].y_girado if EAP_girado else 0)  # Armadura más traccionada (más alejada del EN)
+
+        lista_de_armaduras = []
+        lista_de_armaduras.extend(EA_girado)
+        lista_de_armaduras.extend(EAP_girado)
+        return min(x.y_girado for x in lista_de_armaduras)  # Armadura más traccionada (más alejada del EN)
 
     def calculo_distancia_eje_neutro_de_elementos(self, theta):
         EEH_girado, EA_girado, EAP_girado = self.EEH.copy(), self.EA.copy(), self.EAP.copy()
@@ -367,7 +378,7 @@ class FindInitialDeformation:
                 lista_de_planos.append((def_superior / 1000, def_inferior / 1000, tipo, j))
         except AttributeError as e:
             pass
-        lista_invertida = [(x[1], x[0], -x[2], x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
+        lista_invertida = [(x[1], x[0], -x[2], -x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
         return lista_de_planos + lista_invertida
 
     def obtener_angulo_plano_de_carga(self):
