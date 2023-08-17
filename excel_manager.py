@@ -7,6 +7,7 @@ class ExcelManager:
 
     def __init__(self, file_name, sheet_name):
         wb = openpyxl.load_workbook(file_name, data_only=True)
+        self.wb = wb
         self.sh = wb[sheet_name]
 
     def get_value(self, column, row):

@@ -1,68 +1,87 @@
+from scipy.optimize import fsolve
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+import traceback
+import os
+import warnings
+
+
 from excel_manager import ExcelManager
 from acero_pretensado import BarraAceroPretensado
 from acero_pasivo import BarraAceroPasivo
 from hormigon import Hormigon
 from geometria import Nodo, Contorno, SeccionGenerica, Segmento
 from matrices import MatrizAceroPasivo, MatrizAceroActivo
-import math
-import matplotlib.pyplot as plt
-from scipy.optimize import fsolve
-import traceback
-import numpy as np
-import os
-
-import warnings
 
 
-class FindInitialDeformation:
-    def __init__(self, file_path):
+class ObtenerDiagramaDeInteraccion2D:
+    def __init__(self, file_path, angulo_de_plano_de_carga):
         self.file_name = file_path.split(".")[0].split("/")[-1]
         self.excel_wb = ExcelManager(file_path, "Ingreso de Datos")
-        self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
-        self.angulo_plano_de_carga_esperado = self.obtener_angulo_plano_de_carga()
-        warnings.filterwarnings("error")
+        try:
+            self.angulo_plano_de_carga_esperado = angulo_de_plano_de_carga
+            self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
 
-        self.def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
-        self.def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
+            warnings.filterwarnings("error")
 
-        self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "4"))  # TODO mejorar
-        self.tipo_estribo = self.excel_wb.get_value("E", "10")
+            self.def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
+            self.def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
 
-        self.setear_propiedades_acero_pasivo()
-        self.setear_propiedades_acero_activo()
-        self.medir_diferencias = []
+            self.hormigon = Hormigon(tipo=self.excel_wb.get_value("C", "4"))  # TODO mejorar
+            self.tipo_estribo = self.excel_wb.get_value("E", "10")
 
-        self.dx, self.dy = self.get_discretizacion()
+            self.setear_propiedades_acero_pasivo()
+            self.setear_propiedades_acero_activo()
+            self.medir_diferencias = []
 
-        self.seccion_H = self.obtener_matriz_hormigon()
-        self.EEH = self.seccion_H.elementos
-        self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
+            self.dx, self.dy = self.get_discretizacion()
 
-        self.EA = self.obtener_matriz_acero_pasivo()
-        self.EAP = self.obtener_matriz_acero_pretensado()
+            self.seccion_H = self.obtener_matriz_hormigon()
+            self.EEH = self.seccion_H.elementos
+            self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
 
-        self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
-        self.planos_de_deformacion = self.obtener_planos_de_deformacion()
-        self.mostrar_planos_de_deformacion()
+            self.EA = self.obtener_matriz_acero_pasivo()
+            self.EAP = self.obtener_matriz_acero_pretensado()
 
-        self.mostrar_seccion()
+            self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
+            self.planos_de_deformacion = self.obtener_planos_de_deformacion()
+            # self.mostrar_planos_de_deformacion()
+            # self.mostrar_seccion()
+            ec, phix, phiy = self.obtener_plano_deformación_inicial()
+            # self.print_result_tridimensional(ec, phix, phiy)
+            self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec + math.tan(math.radians(phix)) * (y) + math.tan(
+                math.radians(phiy)) * (x)
+            self.asignar_deformacion_hormigon_a_elementos_pretensados()
 
-        ec, phix, phiy = self.obtener_plano_deformación_inicial()
-        # self.print_result_tridimensional(ec, phix, phiy)
-        self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec + math.tan(math.radians(phix)) * (y) + math.tan(
-            math.radians(phiy)) * (x)
-        self.asignar_deformacion_hormigon_a_elementos_pretensados()
-
-        self.lista_planos_sin_solucion = []
-        self.lista_resultados = self.iterar()
-        print(f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(self.lista_resultados)} puntos sin solución,"
-              f"\nTotal: {len(self.lista_planos_sin_solucion) + len(self.lista_resultados)}"
-              f"\nDetalles:"
-              # f"{self.lista_planos_sin_solucion}"
-              )
+            self.lista_planos_sin_solucion = []
+            self.lista_resultados = self.iterar()
+            print(f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(self.lista_resultados)} puntos sin solución,"
+                  f"\nTotal: {len(self.lista_planos_sin_solucion) + len(self.lista_resultados)}"
+                  f"\nDetalles:"
+                  # f"{self.lista_planos_sin_solucion}"
+                  )
+        finally:
+            self.excel_wb.wb.close()
         # self.medir_diferencias.sort(reverse=True)
         # print(self.medir_diferencias)
-        self.guardar_resultado(blanco_y_negro=True)
+        # self.mostrar_resultado(blanco_y_negro=False)
+
+    def coordenadas_de_puntos_en_3d(self):
+        X, Y, Z = [], [], []
+        color_lista = []
+        for resultado in self.lista_resultados:
+            sum_f, momento, plano_def, tipo, phi = resultado
+            momento = momento / 100
+            x = math.cos(math.radians(self.angulo_plano_de_carga_esperado))*momento
+            y = math.sin(math.radians(self.angulo_plano_de_carga_esperado))*momento
+            z = -sum_f  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+            X.append(x)
+            Y.append(y)
+            Z.append(z)
+            color_lista.append(self.numero_a_color_arcoiris(abs(plano_def[3])))
+        return (X, Y, Z), color_lista
+
 
     def obtener_plano_deformación_inicial(self):
         if not self.EAP:  # Caso de Hormigón Armado
@@ -142,7 +161,7 @@ class FindInitialDeformation:
         plt.show()
 
     def mostrar_resultado(self, blanco_y_negro=False):
-        self.construir_grafica_resultado(blanco_y_negro)
+        self.construir_grafica_resultado(arcoiris=True, blanco_y_negro=blanco_y_negro)
         plt.show()
 
     def guardar_resultado(self, blanco_y_negro=False):
@@ -154,10 +173,9 @@ class FindInitialDeformation:
         print(f"Guardando Diagrama de Interacción en {path}/Diagrama de Interacción")
         plt.savefig(f"{path}/Diagrama de Interacción.png")
 
-    def construir_grafica_resultado(self, blanco_y_negro=False):
+    def construir_grafica_resultado(self, arcoiris=True, blanco_y_negro=False):
         plt.rcParams["font.family"] = "Times New Roman"
 
-        lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
 
         X = []
         Y = []
@@ -181,9 +199,10 @@ class FindInitialDeformation:
             y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
+            color_kwargs = self.obtener_color_kwargs(plano_def, arcoiris=arcoiris, blanco_y_negro=blanco_y_negro)
             plt.scatter(x, y,
-                        c=lista_colores[abs(tipo)] if blanco_y_negro is False else "k",
-                        marker="."
+                        marker=".",
+                        **color_kwargs
                         # if tipo >= 0 else "x"
                         )
         # for resultado in self.lista_resultados:
@@ -196,6 +215,12 @@ class FindInitialDeformation:
         # plt.annotate(str(plano_def), (x,y))
 
         plt.show()
+
+    def obtener_color_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
+        # lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
+        if arcoiris:
+            return {"color": self.numero_a_color_arcoiris(abs(plano_de_def[3]))}
+        # return {"c": lista_colores[abs(plano_de_def[2])] if blanco_y_negro is False else "k"}
 
     @staticmethod
     def preparar_eje(ax):
@@ -272,6 +297,8 @@ class FindInitialDeformation:
             return 0
         angulo_plano_de_carga = self.obtener_angulo_resultante_momento(Mx, My)
         alpha = 90 - self.angulo_plano_de_carga_esperado
+        if alpha < 0:
+            alpha = 180 + alpha
         diferencia = angulo_plano_de_carga - alpha  # Apuntamos a que esto sea 0
         return diferencia
 
@@ -381,9 +408,23 @@ class FindInitialDeformation:
         lista_invertida = [(x[1], x[0], -x[2], -x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
         return lista_de_planos + lista_invertida
 
-    def obtener_angulo_plano_de_carga(self):
-        rows_n = self.excel_wb.get_n_rows_after_value("INCLINACIÓN DEL PLANO DE CARGA", 5)
-        return self.excel_wb.get_value("E", rows_n[2])  # TODO mejorar
+    # def obtener_angulo_plano_de_carga(self):
+    #     rows_n = self.excel_wb.get_n_rows_after_value("INCLINACIÓN DEL PLANO DE CARGA", 5)
+    #     return self.excel_wb.get_value("E", rows_n[2])  # TODO mejorar
+
+
+    @staticmethod
+    def numero_a_color_arcoiris(numero):
+        if numero < 0 or numero > 350:
+            raise ValueError("El número debe estar entre 0 y 350")
+
+        numero_normalizado = numero / 350.0
+
+        rojo = int(max(0, min(255, 255 * (1 - numero_normalizado))))
+        verde = int(max(0, min(255, 255 * (1 - abs(numero_normalizado - 0.5) * 2))))
+        azul = int(max(0, min(255, 255 * numero_normalizado)))
+
+        return [rojo/255, verde/255, azul/255]
 
     def obtener_matriz_acero_pasivo(self):
         lista_filas = self.excel_wb.get_rows_range_between_values(
@@ -603,4 +644,25 @@ class FindInitialDeformation:
         self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
 
 
-resolver = FindInitialDeformation(file_path="Archivos Excel/Sección Cajón.xlsm")
+class ObtenerDiagramaDeInteraccion3D:
+
+    def __init__(self, file_path):
+        self.lista_de_angulos_de_carga = [0, 90]
+        lista_x_total, lista_y_total, lista_z_total,lista_color = [], [], [], []
+        for angulo_plano_de_carga in self.lista_de_angulos_de_carga:
+            warnings.simplefilter(action='ignore', category=UserWarning)
+            solucion_parcial = ObtenerDiagramaDeInteraccion2D(file_path, angulo_plano_de_carga)
+            coordenadas, color = solucion_parcial.coordenadas_de_puntos_en_3d()
+            lista_x_parcial, lista_y_parcial, lista_z_parcial = coordenadas
+            lista_x_total.extend(lista_x_parcial)
+            lista_y_total.extend(lista_y_parcial)
+            lista_z_total.extend(lista_z_parcial)
+            lista_color.extend(color)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(lista_x_total, lista_y_total, lista_z_total, color=lista_color)
+        plt.show()
+
+
+resolver = ObtenerDiagramaDeInteraccion3D(file_path="Archivos Excel/Sección Cajón.xlsm")
