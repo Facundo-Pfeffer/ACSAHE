@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import copy
+from typing import List
 
 tolerancia = 10**-13
 
@@ -15,7 +16,9 @@ class Nodo(object):
     def __eq__(self, otro_nodo):  # Determinar si dos puntos son iguales, bajo el valor de tolerancia
         return self.x - tolerancia <= otro_nodo.x <= self.x + tolerancia and self.y - tolerancia <= otro_nodo.y <= self.y + tolerancia
 
+
 class ListaDeNodos(object):
+    """Objeto que alberga una lista de elementos de clase Nodo."""
     def __init__(self, lista_nodos):
         self.lista_nodos = lista_nodos
 
@@ -28,7 +31,7 @@ class ListaDeNodos(object):
 
 
 class Segmento(object):
-
+    """Segmento en dos dimensiones definido a partir de 2 Nodos de paso."""
     def __init__(self, nodo_1: Nodo, nodo_2: Nodo):
         self.nodo_1 = nodo_1
         self.nodo_2 = nodo_2
@@ -77,18 +80,24 @@ class Recta(object):
     def __init__(self, nodo_1: Nodo, nodo_2: Nodo):
         self.nodo_1 = nodo_1
         self.nodo_2 = nodo_2
-        a, b, c = self.obtener_parametros_ecuacion_recta()
+        a, b, c = self.obtener_parametros_ecuacion_implicita(nodo_1, nodo_2)
         self.ecuacion_recta = lambda nodo: a*nodo.x + b*nodo.y + c
+
+        # Definición de métodos a ser usados.
         self.distancia_a_nodo = lambda nodo: (a*nodo.x + b*nodo.y + c)/((a**2 + b**2)**0.5)
         self.distancia_a_nodo_v = lambda nodo: abs(nodo.y + (c+a*nodo.x)/b) if b!=0 else None
         self.distancia_a_nodo_h = lambda nodo: abs(nodo.x + (c+b*nodo.y)/a) if a!=0 else None
 
+        # Distancia en Vertical y Horizontal, respectivamente.
         self.y = lambda x: -c/b - a/b * x
         self.x = lambda y: -c/a - b/a * y
 
-    def obtener_parametros_ecuacion_recta(self):
-        x1, y1 = self.nodo_1.x, self.nodo_1.y
-        x2, y2 = self.nodo_2.x, self.nodo_2.y
+    @staticmethod
+    def obtener_parametros_ecuacion_implicita(nodo_1, nodo_2):
+        """Obtiene los parámetros a, b y c de una recta, de manera de describir
+        la ecuación de la misma en el plano de la forma a*x+b*y*c (tipo cartesiana o implícita)"""
+        x1, y1 = nodo_1.x, nodo_1.y
+        x2, y2 = nodo_2.x, nodo_2.y
         a = y1 - y2
         b = x2 - x1
         c = y2*(x1-x2) + (y2-y1)*x2
@@ -97,23 +106,30 @@ class Recta(object):
     def mostrar_recta(self):
         plt.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y])
 
-    def __and__(self, otra_recta):
-        """Intersecta las rectas
-        :param otra_recta:
+    def __and__(self, otra_recta) -> Nodo or None:
+        """Realiza la intersección de la recta con otra provista, en el plano.
+        :param otra_recta: recta a intersectar.
         :return Nodo de intersección or None si no se encuentran"""
         x1, y1, x2, y2 = self.nodo_1.x, self.nodo_1.y, self.nodo_2.x, self.nodo_2.y
         x3, y3, x4, y4 = otra_recta.nodo_1.x, otra_recta.nodo_1.y, otra_recta.nodo_2.x, otra_recta.nodo_2.y
-        den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
-        if -1*tolerancia <= den <= tolerancia: # Las rectas son paralelas, no hay interseccion
+        det = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)  # Determinante de la matriz de coordenadas
+        if -1*tolerancia <= det <= tolerancia:  # Cuando den tiende a 0, las rectas son paralelas, no hay intersección.
             return None
-        x = ((x1*y2 - y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4))/den
-        y = ((x1*y2 - y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4))/den
+        # Se aplica la fórmula de Cramer para resolver el sistema de ecuaciones lineal.
+        x = ((x1*y2 - y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4))/det
+        y = ((x1*y2 - y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4))/det
         return Nodo(x, y)
 
 
 class Poligono(object):
+    """Polígono CONVEXO en el plano, formado por una serie de nodos."""
 
-    def __init__(self, nodos, ordenar=False):
+    def __init__(self, nodos: List[Nodo], ordenar: bool = False):
+        """
+        :param nodos: lista de nodos que definen el contorno del polígono.
+        :param ordenar: define si la lista de nodos anterior debe ser ordenada en sentido antihorario, siendo dicho
+         sentido el convencional para el programa."""
+
         self.nodos_extremos = nodos if not ordenar else self.ordenar_nodos_poligono_convexo_antihorario(nodos)
         self.x = [nodo.x for nodo in self.nodos_extremos]
         self.y = [nodo.y for nodo in self.nodos_extremos]
@@ -131,29 +147,31 @@ class Poligono(object):
 
     @staticmethod
     def ordenar_nodos_poligono_convexo_antihorario(nodos=None):
-        """Ordena los nodos en sentido antihorario, cuando el polígono sea CONVEXO. """
+        """Ordena los nodos en sentido antihorario, cuando el polígono SEA CONVEXO."""
         if nodos is None:
             return None
         x_array = np.array([nodo.x for nodo in nodos])
         y_array = np.array([nodo.y for nodo in nodos])
+
+        # Coordenadas del centroide
         x0 = np.mean(x_array)
         y0 = np.mean(y_array)
+
+        # Calcular las distancias desde el centroide a cada nodo
         r = np.sqrt((x_array - x0) ** 2 + (y_array - y0) ** 2)
-
-        angles = np.where((y_array - y0) > 0, np.arccos((x_array - x0) / r), 2 * np.pi - np.arccos((x_array - x0) / r))
-
-        mask = np.argsort(angles)
-
+        # Calcula el ángulo antihorario con respecto al eje x de cada punto, y ordena en base al mismo.
+        angulos = np.where((y_array - y0) > 0, np.arccos((x_array - x0) / r), 2 * np.pi - np.arccos((x_array - x0) / r))
+        mask = np.argsort(angulos)
         x_sorted = x_array[mask]
         y_sorted = y_array[mask]
 
         nodos_ordenados = []
-
         for i in range(len(x_sorted)):
             nodos_ordenados.append(Nodo(x_sorted[i], y_sorted[i]))
         return nodos_ordenados
 
     def obtener_segmentos_borde(self):
+        """A partir de los nodos que fueron ingresados, obtiene la lista de segmentos de borde."""
         i = 0
         imax = len(self.nodos_extremos)
         lista_de_segmentos = []
@@ -191,41 +209,43 @@ class Poligono(object):
             print(e)
 
     def determinar_si_nodo_pertence_a_contorno(self, nodo_a_buscar: Nodo):
+        """Devuelve verdadero si el nodo se encuentra dentro del contorno, sin incluir los bordes del mismo."""
         for i, nodo in enumerate(self.nodos_extremos):
             nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
             recta = Recta(nodo_1, nodo_2)  # Recta definida por el nodo 1 y nodo 2.
-            signo_semiplano_contorno = recta.ecuacion_recta(
-                nodo_3)  # La ecuacion de la recta devuelve un número cuyo signo será el adecuado para los puntos que se encuentran en el mismo semiplano
+            # La ecuación de la recta devolverá valores del mismo signo para puntos del mismo semiplano.
+            signo_semiplano_contorno = recta.ecuacion_recta(nodo_3)
             if signo_semiplano_contorno == 0:
-                print("Por favor, ingresar puntos en el contorno que no esten alineados")
-                return
+                raise Exception("Error de Ingreso de datos: Ingresar puntos en el contorno que no estén alineados.")
             signo_semiplano_elemento = recta.ecuacion_recta(nodo_a_buscar)
-            if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Si son de distinto signo descartar el elemento
+            if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Si son de distinto signo, no pertenece.
                 return False
         return True
 
     def determinar_si_nodo_pertence_a_contorno_sin_borde(self, nodo_a_buscar: Nodo):
+        """Devuelve verdadero si el nodo se encuentra dentro del contorno, incluyendo los bordes del mismo."""
         for i, nodo in enumerate(self.nodos_extremos):
             nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
             recta = Recta(nodo_1, nodo_2)  # Recta definida por el nodo 1 y nodo 2.
-            signo_semiplano_contorno = recta.ecuacion_recta(
-                nodo_3)  # La ecuacion de la recta devuelve un número cuyo signo será el adecuado para los puntos que se encuentran en el mismo semiplano
+            # La ecuación de la recta devolverá valores del mismo signo para puntos del mismo semiplano.
+            signo_semiplano_contorno = recta.ecuacion_recta(nodo_3)
             if signo_semiplano_contorno == 0:
-                print("Por favor, ingresar puntos en el contorno que no esten alineados")
-                return
+                raise Exception("Error de Ingreso de datos: Ingresar puntos en el contorno que no estén alineados.")
             signo_semiplano_elemento = recta.ecuacion_recta(nodo_a_buscar)
-            if signo_semiplano_contorno * signo_semiplano_elemento <= 0:  # Si son de distinto signo descartar el elemento
+            if signo_semiplano_contorno * signo_semiplano_elemento <= 0:  # Si son de distinto signo, no pertenece.
                 return False
         return True
 
     def obtener_3_nodos_x_indice(self, i_punto_1):
-        """Obtiene el nodo en cuestión y los 2 nodos subsiguientes, basado en el índice del primer nodo.
+        """
+        Obtiene el nodo en cuestión y los 2 nodos subsiguientes, basado en el índice del primer nodo.
         Al quedar algún índice fuera de rango, se obtiene el primer o segundo elemento según corresponda."""
         i_punto_2 = self.obtener_indice(i_punto_1, 1)
         i_punto_3 = self.obtener_indice(i_punto_1, 2)
         return self.nodos_extremos[i_punto_1], self.nodos_extremos[i_punto_2], self.nodos_extremos[i_punto_3]
 
     def obtener_indice(self, indice_punto_1, valor_a_sumar: int):
+        """Obtiene el índice del próximo elemento, dependiendo de valor_a_sumar"""
         i_punto = indice_punto_1 + valor_a_sumar
         return i_punto if i_punto < self.total_de_nodos else i_punto - self.total_de_nodos
 
@@ -235,7 +255,8 @@ class Poligono(object):
                                      texto_a_mostrar=None,
                                      tridimensional=False,
                                      ec_plano_3d=None,
-                                     plt_3d = None):
+                                     plt_3d=None):
+
         lista_colores = ["r", "b", "g", "c", "m", "y", "k"]
         lista_espesores = [x/5 for x in range(10, 20)]
         colour = random.choice(lista_colores) if indice_color is None else lista_colores[indice_color]
@@ -265,8 +286,6 @@ class Poligono(object):
         if texto_a_mostrar:
             plt.text(self.xg, self.yg, texto_a_mostrar)
 
-
-
     def obtener_poligono_interseccion(self, otro_poligono):
         """Obtiene el poligono que resulta de intersectar self con otro_poligono"""
         lista_nodos_interseccion = self & otro_poligono
@@ -284,19 +303,17 @@ class Poligono(object):
         lista_nodos_interseccion = ListaDeNodos(lista_nodos_interseccion).eliminar_duplicados()
         return Poligono(lista_nodos_interseccion, ordenar=True)
 
-
-
     def restar_con_otro_poligono(self, otro_poligono):
         """Resta al elemento self el complemento con otro_poligono.
         :param otro_poligono: polígono que se le restará a self.
         :return el mismo elemento self, pero modificado por la resta."""
 
-        lista_de_nodos_de_interssecion = self.obtener_nodos_compartidos_entre_poligonos(self, otro_poligono)
+        lista_de_nodos_de_interseccion = self.obtener_nodos_compartidos_entre_poligonos(self, otro_poligono)
 
-        if len(lista_de_nodos_de_interssecion) <= 2:
+        if len(lista_de_nodos_de_interseccion) <= 2:
             return self
 
-        poligono_interno = Poligono(lista_de_nodos_de_interssecion, ordenar=True)
+        poligono_interno = Poligono(lista_de_nodos_de_interseccion, ordenar=True)
 
         if self.area_y_centro_son_iguales(poligono_1=self, poligono_2=poligono_interno):
             # Si la interseccion es igual al mismo poligono, será eliminado.
@@ -313,12 +330,13 @@ class Poligono(object):
         self.area = nueva_area
         self.xg, self.yg = nueva_x, nueva_y
         self.nodo_centroide = Nodo(nueva_x, nueva_y)
-        self.nodos_interseccion_lista = lista_de_nodos_de_interssecion + self.nodos_interseccion_lista
+        self.nodos_interseccion_lista = lista_de_nodos_de_interseccion + self.nodos_interseccion_lista
         return self  # self modificado
 
     @staticmethod
     def nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):  # Criterio: área=0|nodo en infinito numérico.
         return not(-tolerancia <= nueva_area <= tolerancia or nueva_x == float("inf") or nueva_y == float("inf"))
+
     @staticmethod
     def obtener_nodos_compartidos_entre_poligonos(poligono_1, poligono_2):
         """Devuelve una lista de:
@@ -376,6 +394,8 @@ class Poligono(object):
 
 
 class RectanguloDiferencial(Poligono):
+    """El elemento finito que compone a un Polígono mayor.
+     Al estar formado por 4 nodos compone en sí un Polígono."""
     def __init__(self, ubicacion_centro: Nodo, medidas: tuple):
         a, b = medidas
         self.lado_x, self.lado_y = a, b
@@ -407,11 +427,16 @@ class RectanguloDiferencial(Poligono):
 
 
 class Contorno(Poligono):
+    """Un contorno es un polígono el cual podrá ser discretizado en elementos tipo RectanguloDiferencial.
+    Además, el atributo signo lleva asignado un significado:
+    signo = -1; negativo implica que el contorno es un agujero en la sección final.
+    signo = 1; por el contrario, positivo es un contorno con elementos que aportarán a la solución final."""
     def __init__(self, nodos: list, signo: int, ordenar=False):
         self.signo = signo
         super().__init__(nodos, ordenar=ordenar)
 
     def discretizar_contorno(self, dx, dy):
+        """Define la lista de elementos tipo RectanguloDiferencial que se encuentran dentro del contorno."""
         lista_de_elementos = self.obtener_lista_de_elementos_preliminar(dx, dy)
         lista_de_elementos.sort(key=lambda elemento: (elemento.y, elemento.x))
         # Elementos con coordenadas no válidas deben ser limpiados
@@ -419,8 +444,8 @@ class Contorno(Poligono):
         return self.eliminar_elementos_fuera_de_contorno(lista_elem_validos)  # Limpieza adicional de elementos no validos.
 
     def obtener_lista_de_elementos_preliminar(self, dx, dy):
-        """Obtiene la lista de elementos preliminarmente del rectángulo que contiene al contorno, para luego eliminar
-        los elementos restantes."""
+        """Obtiene la lista de elementos preliminarmente del rectángulom mayor que contiene al contorno, para luego
+         eliminar los restantes."""
         lista_de_elementos = []
         lista_de_direcciones = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
         for direccion in lista_de_direcciones:
@@ -450,16 +475,17 @@ class Contorno(Poligono):
         return lista_de_elementos
 
     def eliminar_elementos_fuera_de_contorno(self, lista_de_elementos):
+        """Elimina aquellos elementos definidos preliminarmente que finalmente se encuentran por fuera del contorno."""
         for i, nodo in enumerate(self.nodos_extremos):
             nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
-            recta = Recta(nodo_1, nodo_2) # Recta definida por el nodo 1 y nodo 2.
-            signo_semiplano_contorno = recta.ecuacion_recta(nodo_3)  # La ecuacion de la recta devuelve un número cuyo signo será el adecuado para los puntos que se encuentran en el mismo semiplano
+            recta = Recta(nodo_1, nodo_2)  # Recta definida por el nodo 1 y 2.
+            # La ecuación de la recta devuelve números del mismo signos para puntos en el mismo semiplano
+            signo_semiplano_contorno = recta.ecuacion_recta(nodo_3)
             if signo_semiplano_contorno == 0:
-                print("Por favor, ingresar puntos en el contorno que no esten alineados")
-                return
+                raise Exception("Por favor, ingresar puntos en el contorno que no estén alineados")
             for elemento_diferencial in lista_de_elementos.copy():
                 signo_semiplano_elemento = recta.ecuacion_recta(elemento_diferencial.nodo_centroide)
-                if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Si son de distinto signo, descartar el elemento
+                if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Fuera del semiplano del contorno.
                     lista_de_elementos.remove(elemento_diferencial)
         return lista_de_elementos
 
@@ -475,7 +501,9 @@ class Contorno(Poligono):
         plt.show()
 
 
-class SeccionGenerica(object):
+class SeccionArbitraria(object):
+    """Una Sección Genérica será la combinación de objetos tipo Contorno, dando el resultante dependiendo del signo,
+    de los mismos."""
     def __init__(self, contornos: dict, dx, dy):
         self.dx, self.dy = dx, dy
         self.contornos_negativos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == -1]
@@ -543,7 +571,7 @@ class SeccionGenerica(object):
             area_total = area_total + elemento.area
             sx = sx + elemento.area * elemento.xg
             sy = sy + elemento.area * elemento.yg
-        return round(area_total, 12), round(sx/area_total, 10), round(sy/area_total, 10)
+        return round(area_total, 10), round(sx/area_total, 10), round(sy/area_total, 10)
 
     def cambiar_coordenadas_a_baricentro(self):
         for elemento in self.elementos:

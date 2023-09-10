@@ -12,8 +12,8 @@ class Hormigon:
         Se recuerda que las deformaciones negativas corresponden a una fibra comprimida.
 
         Variables:
-        deformación: deformación de la fibra a analizarse
-        e_max: deformación de la fibra más comprimida de la sección.
+        :param e: deformación de la fibra a analizarse.
+        :param e_max_comp: deformación de la fibra más comprimida de la sección.
         """
         e_lim = (1 - self.B1) * e_max_comp  # Deformación a partir de la cual estamos fuera del bloque de tensiones.
         if e > e_lim:  # = e menos comprimido que e_lim (recordar signo).
@@ -30,8 +30,8 @@ class Hormigon:
 
     def obtener_beta_1(self):
         """
-        Obtiene el valo de ß1, el cual determina la relación entre la profundidad del eje neutro y la del bloque
-        de tensiones. Refierase al apartado 10.2.7.3 del CIRSOC 201 (2005).
+        Obtiene el valor de ß1, el cual determina la relación entre la profundidad del eje neutro y la del bloque
+        de tensiones. Refiérase al apartado 10.2.7.3 del CIRSOC 201 (2005).
         :return:
         """
         if self.fc > 30:
