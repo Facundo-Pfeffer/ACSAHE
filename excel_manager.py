@@ -21,17 +21,13 @@ class ExcelManager:
                 return column, row
         return None, None
 
-    def get_value_on_the_right(self, wanted_value, rows_range, limit_search=100):
+    def get_value_on_the_right(self, valor_buscado, rango_de_filas, n_columna=1):
         """Obtiene el valor de la primer celda que se encuentre a la derecha del contenido a buscar."""
-        columna_inicial, fila_de_busqueda = self.find_cell_by_value(wanted_value, rows_range=rows_range)
+        columna_inicial, fila_de_busqueda = self.find_cell_by_value(valor_buscado, rows_range=rango_de_filas)
         if not columna_inicial:
             return None
-        numero_ascii_columna = ord(columna_inicial) + 1  # Valor inicial
-        while numero_ascii_columna < limit_search:
-            valor_celda = self.get_value(chr(numero_ascii_columna), fila_de_busqueda)
-            if valor_celda and valor_celda != wanted_value:
-                return valor_celda
-            numero_ascii_columna = numero_ascii_columna + 1
+        numero_ascii_columna = ord(columna_inicial) + n_columna  # Valor inicial
+        return self.get_value(chr(numero_ascii_columna), fila_de_busqueda)
 
     def get_n_rows_after_value(self, wanted_value: str, number_of_rows_after_value: int,
                                columns_range=default_columns_range_value, rows_range=default_rows_range_value):
@@ -71,6 +67,22 @@ class ExcelManager:
         subrange_start = None
         for row in row_range:
             if self.cell_is_filled(column_letter, row):
+                if subrange_start is None:
+                    subrange_start = row
+                else:
+                    result.append(list(range(subrange_start, row)))
+                    subrange_start = row
+        if subrange_start is not None:
+            result.append(list(range(subrange_start, row_range[-1] + 1)))
+        return result
+
+
+    def subdivide_range_in_contain_word(self, column_letter, row_range, word):
+        """Subdivides the rows given by row_range in different ranges between formatted cells"""
+        result = []
+        subrange_start = None
+        for row in row_range:
+            if word in (str(self.get_value(column_letter, row)) or ""):
                 if subrange_start is None:
                     subrange_start = row
                 else:
