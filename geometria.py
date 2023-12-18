@@ -7,7 +7,7 @@ from typing import List
 from matplotlib.patches import Arc
 from plotly_util import PlotlyUtil
 
-tolerancia = 10 ** -13
+tolerancia = 10 ** -12
 lista_colores = ["r", "b", "g", "c", "m", "y", "k"]
 lista_espesores = [x / 5 for x in range(10, 20)]
 
@@ -19,6 +19,10 @@ class Nodo(object):
 
     def __eq__(self, otro_nodo):  # Determinar si dos puntos son iguales, bajo el valor de tolerancia
         return self.x - tolerancia <= otro_nodo.x <= self.x + tolerancia and self.y - tolerancia <= otro_nodo.y <= self.y + tolerancia
+
+    def __sub__(self, nodo):
+        """Obtiene la distancia entre nodos"""
+        return math.sqrt((self.x - nodo.x) ** 2 + (self.y - nodo.y) ** 2)
 
 
 class ListaDeNodos(object):
@@ -346,7 +350,8 @@ class Poligono(object):
 
     @staticmethod
     def nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):  # Criterio: área=0|nodo en infinito numérico.
-        return not (-tolerancia <= nueva_area <= tolerancia or nueva_x == float("inf") or nueva_y == float("inf"))
+        return not (-tolerancia * tolerancia <= nueva_area <= tolerancia * tolerancia or nueva_x == float(
+            "inf") or nueva_y == float("inf"))
 
     @staticmethod
     def obtener_nodos_compartidos_entre_poligonos(poligono_1, poligono_2):
@@ -370,6 +375,8 @@ class Poligono(object):
     def __and__(self, otro_poligono):
         """Devuelve los nodos de interseccion de dos poligonos"""
         lista_nodos_interseccion = []
+        if isinstance(self, ContornoCircular) or isinstance(otro_poligono, ContornoCircular):
+            return lista_nodos_interseccion
         for segmento_contorno in self.segmentos_borde:
             for segmento_rectangulo in otro_poligono.segmentos_borde:
                 interseccion = segmento_contorno & segmento_rectangulo
@@ -380,16 +387,18 @@ class Poligono(object):
         return lista_nodos_interseccion or None
 
     def __lt__(self, poligono_mayor):
-        """Determina si self esta contenido dentro de poligono mayor"""
+        """Determina si self está contenido dentro de poligono mayor"""
         centro_pertenece_a_contorno = poligono_mayor.determinar_si_nodo_pertence_a_contorno(self.nodo_centroide)
         if not centro_pertenece_a_contorno:
             return False
-        intersecciones = poligono_mayor & self
-        return True if not intersecciones else False
+        if not(isinstance(self, ContornoCircular) or isinstance(poligono_mayor, ContornoCircular)):
+            intersecciones = poligono_mayor & self
+            return True if not intersecciones else False
+        return True
 
     @staticmethod
     def area_y_centro_son_iguales(poligono_1, poligono_2):
-        """Valida si dos poligonos son iguales"""
+        """Valida si dos polígonos son iguales"""
         return poligono_2.area - tolerancia <= poligono_1.area <= poligono_2.area + tolerancia and \
             poligono_2.xg - tolerancia <= poligono_1.xg <= poligono_2.xg + tolerancia and \
             poligono_2.yg - tolerancia <= poligono_1.yg <= poligono_2.yg + tolerancia
@@ -456,7 +465,7 @@ class ElementoTrapecioCircular():
         area_1 = math.radians(self.angulo_final - self.angulo_inicial) * (self.radio_externo ** 2) / 2
         area_2 = math.radians(self.angulo_final - self.angulo_inicial) * (self.radio_interno ** 2) / 2
         radio_al_centroide = 2 * math.sin(theta) / (3 * theta) * (
-                    self.radio_externo * area_1 - self.radio_interno * area_2) / self.area
+                self.radio_externo * area_1 - self.radio_interno * area_2) / self.area
         self.xg = math.cos(angulo_medio) * radio_al_centroide + self.xc
         self.yg = math.sin(angulo_medio) * radio_al_centroide + self.yc
 
@@ -537,9 +546,9 @@ class ContornoCircular(ElementoTrapecioCircular):
 
     def discretizar_contorno(self, discretizacion_angulo, discretizacion_radio):
         """Define la lista de elementos tipo ElementoRectangular que se encuentran dentro del contorno."""
-        n = discretizacion_radio
+        n = 1 / discretizacion_radio
         funcion_radios = lambda i: self.radio_interno + (self.radio_externo - self.radio_interno) * (
-                    1 - (1 - i / n) ** 1.25)
+                1 - (1 - i / n) ** 1.25)
 
         resultado = []
         radio = self.radio_interno
@@ -586,12 +595,15 @@ class ContornoCircular(ElementoTrapecioCircular):
             elemento.plot(ax)
         plt.show()
 
+    def determinar_si_nodo_pertence_a_contorno(self, nodo: Nodo):
+        distancia_centro = self.nodo_centro - nodo
+        return self.radio_interno - tolerancia < distancia_centro < self.radio_externo + tolerancia
+
 
 class Contorno(Poligono):
     """Un contorno es un polígono el cual podrá ser discretizado en elementos tipo ElementoRectangular.
     Además, el atributo signo lleva asignado un significado:
-    signo = -1; negativo implica que el contorno es un agujero en la sección final.
-    signo = 1; por el contrario, positivo es un contorno con elementos que aportarán a la solución final."""
+    """
     tipo = "Poligonal"
 
     def __init__(self, nodos: list, signo: int, indice, ordenar=False):
@@ -673,8 +685,8 @@ class SeccionArbitraria(object):
     """Una Sección Genérica será la combinación de objetos tipo Contorno, dando el resultante dependiendo del signo,
     de los mismos."""
 
-    def __init__(self, contornos: dict, dx, dy):
-        self.dx, self.dy = dx, dy
+    def __init__(self, contornos: dict, discretizacion):
+        self.dx, self.dy, self.dr, self.d_ang = discretizacion
         self.contornos_negativos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == -1]
         self.contornos_positivos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == 1]
         self.elementos = self.obtener_matriz_elementos_positivos()
@@ -690,11 +702,12 @@ class SeccionArbitraria(object):
         for contorno_positivo in self.contornos_positivos:
             if contorno_positivo.tipo == "Poligonal":
                 lista_elementos_positivos = contorno_positivo.discretizar_contorno(self.dx, self.dy)
-            else:
-                lista_elementos_positivos = contorno_positivo.discretizar_contorno(discretizacion_angulo=5,
-                                                                                   discretizacion_radio=50)
+            else:  # Circular
+                lista_elementos_positivos = contorno_positivo.discretizar_contorno(discretizacion_angulo=self.d_ang,
+                                                                                   discretizacion_radio=self.dr)
             for elemento_positivo in lista_elementos_positivos:
-                if self.elemento_pertenece_a_contorno_negativo(elemento_positivo):
+                if self.elemento_pertenece_a_contorno_negativo(
+                        elemento_positivo) or elemento_positivo.area < tolerancia:
                     continue  # Descartar elemento
                 elemento_intersectado = self.obtener_interseccion_elemento_positivo_con_negativo(elemento_positivo)
                 if elemento_intersectado:
@@ -722,16 +735,19 @@ class SeccionArbitraria(object):
 
     def mostrar_contornos_2d_plotly(self, fig):
         plotly_util = PlotlyUtil()
-        plotly_util.plot_poligono(fig=fig, lista_elementos=self.contornos_negativos, color="Red", espesor=3, transparencia=1)
-        plotly_util.plot_poligono(fig=fig, lista_elementos=self.contornos_positivos, color="Cyan", espesor=4, transparencia=1)
+        plotly_util.plot_poligono(fig=fig, lista_elementos=self.contornos_negativos, color="Red", espesor=3,
+                                  transparencia=1)
+        plotly_util.plot_poligono(fig=fig, lista_elementos=self.contornos_positivos, color="Cyan", espesor=4,
+                                  transparencia=1)
 
     def mostrar_discretizacion_2d(self, ax):
         for elemento in self.elementos:
-            elemento.plot(indice_color=3, espesor=0.2, mostrar_centroide=True, ax=ax, transparencia=0.1)
+            elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.8)
 
     def mostrar_discretizacion_2d_plotly(self, fig):
         plotly_util = PlotlyUtil()
-        plotly_util.plot_poligono(fig=fig, lista_elementos=self.elementos, color="Cyan", transparencia=0.2, mostrar_centroide=True)
+        plotly_util.plot_poligono(fig=fig, lista_elementos=self.elementos, color="Cyan", transparencia=0.2,
+                                  mostrar_centroide=True)
 
     def mostrar_contornos_3d(self, ecuacion_plano_a_desplazar=None):
         fig = plt.figure()
