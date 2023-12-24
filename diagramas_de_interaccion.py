@@ -16,8 +16,12 @@ from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import plotly.graph_objects as go
 
 from plotly_util import PlotlyUtil
-
+from tkinter import messagebox
 diferencia_admisible = 5
+
+
+def show_message(message, titulo="Mensaje"):
+    messagebox.showinfo(titulo, message)
 
 
 class ObtenerDiagramaDeInteraccion2D:
