@@ -24,11 +24,12 @@ class ObtenerDiagramaDeInteraccion2D:
     niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 24, "Fina": 50, "Muy Fina": 100}
     niveles_mallado_circular = {"Muy Gruesa": (3, 45), "Gruesa": (6, 30), "Media": (12, 10),
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
-    def __init__(self, file_path, angulo_de_plano_de_carga, mostrar_seccion=True, mostrar_resultado=True, **kwargs):
+
+    def __init__(self, file_path):
         self.file_name = file_path
         self.ingreso_datos_wb = ExcelManager(file_path, "Ingreso de Datos")
         try:
-            self.angulo_plano_de_carga_esperado = angulo_de_plano_de_carga
+            self.angulo_plano_de_carga_esperado = self.obtener_plano_de_carga()
             self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
             self.resultados_wb = ExcelManager(file_path, "Resultados")
             self.diagrama_interaccion_wb = ExcelManager(file_path, "Diagrama de Interacción 2D")
@@ -66,19 +67,20 @@ class ObtenerDiagramaDeInteraccion2D:
 
             self.lista_planos_sin_solucion = []
             self.construir_grafica_seccion()
-            if mostrar_seccion:
-                self.mostrar_seccion(**kwargs)
-
             self.lista_resultados = self.iterar()
             normal_momento_phi = [[-x[0], x[1], x[4]] for x in self.lista_resultados]
             self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
-            print(
-                f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(self.lista_resultados)} ({round(len(self.lista_planos_sin_solucion) / len(self.lista_resultados) * 100, 2)}%) "
-                f"puntos sin solución,"
-                f"\nTotal: {len(self.lista_planos_sin_solucion) + len(self.lista_resultados)}"
-                f"\nDetalles:"
-                # f"{self.lista_planos_sin_solucion}"
-                )
+            if len(self.lista_resultados) == 0:
+                print("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
+                      "seleccionar 'VOLVER A VALORES POR DEFECTO'")
+            else:
+                print(
+                    f"Se obtuvieron {len(self.lista_planos_sin_solucion)}/{len(self.lista_resultados)} ({round(len(self.lista_planos_sin_solucion) / len(self.lista_resultados) * 100, 2)}%) "
+                    f"puntos sin solución,"
+                    f"\nTotal: {len(self.lista_planos_sin_solucion) + len(self.lista_resultados)}"
+                    f"\nDetalles:"
+                    # f"{self.lista_planos_sin_solucion}"
+                    )
             # if mostrar_resultado:
             #     self.mostrar_resultado()
         except Exception as e:
@@ -89,6 +91,10 @@ class ObtenerDiagramaDeInteraccion2D:
         # self.medir_diferencias.sort(reverse=True)
         # print(self.medir_diferencias)
         # self.mostrar_resultado(blanco_y_negro=False)
+
+    def obtener_plano_de_carga(self):
+        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",number_of_rows_after_value=20, columns_range="A")
+        return self.ingreso_datos_wb.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2)
 
     def coordenadas_de_puntos_en_3d(self):
         X, Y, Z = [], [], []
@@ -149,14 +155,14 @@ class ObtenerDiagramaDeInteraccion2D:
         self.seccion_H.mostrar_discretizacion_2d(ax)
         # self.mostrar_plano_de_carga(ax)
         # plt.suptitle("ACSAHE\nSección y Discretización", fontsize=20, fontweight='bold', horizontalalignment='center')
-        plt.title(f"Tamaño Elementos:\n{' '.join([f'{k}={v}' for k,v in self.discretizacion.items() if v])}",
+        plt.title(f"Discretización: {self.nivel_disc}\n{' '.join([f'{k}={v}' for k,v in self.discretizacion.items() if v])}",
                   fontsize=16, horizontalalignment='center', style='italic')
         plt.axis('equal')
         ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=8, fontweight='bold')
         ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=8, fontweight='bold')
         plt.xticks(fontsize=8)
         plt.yticks(fontsize=8)
-        self.diagrama_interaccion_wb.sh.pictures.add(fig, name="geometria", update=True, left=self.diagrama_interaccion_wb.sh.range("L3").left, top=self.diagrama_interaccion_wb.sh.range("I3").top, export_options={"bbox_inches": "tight", "dpi": 220})
+        self.diagrama_interaccion_wb    .sh.pictures.add(fig, name="geometria", update=True, left=self.diagrama_interaccion_wb.sh.range("L3").left, top=self.diagrama_interaccion_wb.sh.range("I3").top, export_options={"bbox_inches": "tight", "dpi": 220})
 
     def construir_grafica_seccion_plotly(self, fig=None):
         """Muestra la sección obtenida luego del proceso de discretización."""
@@ -204,7 +210,6 @@ class ObtenerDiagramaDeInteraccion2D:
             )
         fig.show()
         return fig
-
 
     def construir_grafica_seccion_plotly(self, fig=None):
         """Muestra la sección obtenida luego del proceso de discretización."""
@@ -328,23 +333,18 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def construir_grafica_resultado(self, arcoiris=True, blanco_y_negro=False):
         plt.rcParams["font.family"] = "Times New Roman"
-
         X = []
         Y = []
-
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
-
         plt.title(f"DIAGRAMA DE INTERACCIÓN\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
                   fontsize=12, fontweight='bold')
         plt.xticks(ha='right', fontsize=10)
         ax.tick_params(axis='both', which='major', labelsize=10)
-
         ax.set_xlabel("M[kNm]", loc="right", fontsize=10, fontweight='bold')
         ax.set_ylabel("N[kN]", loc="top", rotation=0, rotation_mode="anchor", fontsize=10,
                       fontweight='bold')
-
-        self.preparar_eje(ax)
+        self.preparar_eje_pyplot(ax)
 
         for resultado in self.lista_resultados:
             sumF, M, plano_def, tipo, phi = resultado
@@ -361,14 +361,7 @@ class ObtenerDiagramaDeInteraccion2D:
                         **color_kwargs
                         # if tipo >= 0 else "x"
                         )
-        # for resultado in self.lista_resultados:
-        #     sumF, M, plano_def, tipo, phi = resultado
-        #     x = M / 100  # kN/m²
-        #     y = -sumF  # kN
-        #     #     # plt.annotate(str(phi), (x,y))
-        #     #     plt.annotate(str(f"{round(plano_def[0]*1000, 3)}/{round(plano_def[1]*1000, 3)}"), (x, y))
-        #     plt.annotate(plano_def[3], (x, y))
-        # plt.annotate(str(plano_def), (x,y))
+
         return fig
 
     def obtener_color_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
@@ -378,7 +371,7 @@ class ObtenerDiagramaDeInteraccion2D:
         return {"c": lista_colores[abs(plano_de_def[2])] if blanco_y_negro is False else "k"}
 
     @staticmethod
-    def preparar_eje(ax):
+    def preparar_eje_pyplot(ax):
         # Mueve al centro del diagrama al eje X e Y (por defecto, se sitúan en el extremo inferior izquierdo).
         ax.yaxis.tick_right()
 
@@ -413,10 +406,10 @@ class ObtenerDiagramaDeInteraccion2D:
             for plano_de_deformacion in self.planos_de_deformacion:
                 sol = fsolve(self.evaluar_diferencia_para_inc_eje_neutro,
                              x0=self.angulo_plano_de_carga_esperado,
-                             xtol=0.001,
+                             xtol=0.005,
                              args=plano_de_deformacion,
                              full_output=1,
-                             maxfev=100)  # Max fev = número de iteraciones máximo
+                             maxfev=50)  # Max fev = número de iteraciones máximo
                 theta, diferencia_plano_de_carga, sol_encontrada = sol[0][0], sol[1]['fvec'], sol[2] == 1
                 # test = self.evaluar_diferencia_para_inc_eje_neutro(theta, *plano_de_deformacion)
                 self.medir_diferencias.append((diferencia_plano_de_carga, plano_de_deformacion))
@@ -585,7 +578,8 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def obtener_matriz_acero_pasivo(self):
         lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"))
+            ("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"),
+            columns_range=["A"])
         resultado = MatrizAceroPasivo()
         for fila in lista_filas[5:-1]:  # TODO mejorar
             x, y, d = self.obtener_valores_acero_tabla(fila)
@@ -619,7 +613,8 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def obtener_matriz_acero_pretensado(self):
         lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"))
+            ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"),
+            columns_range=["A"])
         resultado = MatrizAceroActivo()
         for fila in lista_filas[5:-1]:  # TODO mejorar
             x, y, area = self.obtener_valores_acero_tabla(fila)
@@ -660,7 +655,8 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def obtener_matriz_hormigon(self):
         filas_hormigon = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"))
+            ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"),
+            columns_range=["A"])
         lista_filas_contornos = self.ingreso_datos_wb.subdivide_range_in_contain_word("A", filas_hormigon, "Contorno")
         contornos = {}
         coordenadas_nodos = []
@@ -700,8 +696,9 @@ class ObtenerDiagramaDeInteraccion2D:
     def get_discretizacion(self, delta_x, delta_y, contornos):
         hay_contorno_circular = any(isinstance(x, ContornoCircular) for x in contornos)
         hay_contorno_rectangular = any(not isinstance(x, ContornoCircular) for x in contornos)
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", 20)
+        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",number_of_rows_after_value=20, columns_range="A")
         nivel_discretizacion = self.ingreso_datos_wb.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
+        self.nivel_disc = nivel_discretizacion
         if nivel_discretizacion == "Avanzada (Ingreso Manual)":
             dx = self.ingreso_datos_wb.get_value_on_the_right("ΔX [cm] =", rows_range, 2)
             dy = self.ingreso_datos_wb.get_value_on_the_right("ΔY [cm] =", rows_range, 2)
@@ -769,6 +766,7 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
             self, EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
+
         y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
         sumFA = sumFP = sumFH = 0
         MxA = MxAP = MxH = 0
@@ -777,8 +775,6 @@ class ObtenerDiagramaDeInteraccion2D:
 
         def_max_comp = min(e1, e2)
 
-        # c = def_max_comp*(y_max-y_min)/(-e1+e2)
-
         for barra in EA_girado:
             dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
             FA = barra.relacion_constitutiva(def_elemento) * area
@@ -786,22 +782,12 @@ class ObtenerDiagramaDeInteraccion2D:
             MxA = FA * barra.yg + MxA
             MyA = -FA * barra.xg + MyA
 
-        deformaciones_pp = []
         for barra_p in EAP_girado:
             dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(
                 barra_p.y_girado), barra_p.area
             deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
             deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
             deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
-
-            deformaciones_pp.append(
-                {
-                    "elastica": deformacion_hormigon,
-                    "inicial": deformacion_pretensado_inicial,
-                    "neta": deformacion_neta,
-                    "total": deformacion_total
-                }
-            )
 
             Fp = barra_p.relacion_constitutiva(deformacion_total) * area
             sumFP = sumFP + Fp
@@ -817,18 +803,6 @@ class ObtenerDiagramaDeInteraccion2D:
 
         factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(
             EA_girado, EAP_girado, ecuacion_plano_deformacion, self.tipo_estribo)
-        # factor_minoracion_de_resistencia = 1
-        resultados_parciales = {
-            "H": {"F": sumFH,
-                  "Mx": MxH,
-                  "My": MyH},
-            "A": {"F": sumFA,
-                  "Mx": MxA,
-                  "My": MyA},
-            "AP": {"F": sumFP,
-                   "Mx": MxAP,
-                   "My": MyAP}
-        }
 
         sumF = sumFA + sumFP + sumFH
         Mx = round(MxA + MxAP + MxH, 8)

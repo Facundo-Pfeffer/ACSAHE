@@ -1,7 +1,9 @@
 import xlwings as xw
 
+
 class ExcelManager:
-    default_columns_range_value = tuple([chr(x) for x in range(65, 91)])  # Tuple from A to Z
+
+    default_columns_range_value = tuple([chr(x) for x in range(65, 65+7)])  # Tuple from A to G
     default_rows_range_value = tuple(range(1, 400))
 
     def __init__(self, file_name, sheet_name):

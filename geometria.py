@@ -741,8 +741,7 @@ class SeccionArbitraria(object):
                                   transparencia=1)
 
     def mostrar_discretizacion_2d(self, ax):
-        for elemento in self.elementos:
-            elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.8)
+        [elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.8) for elemento in self.elementos]
 
     def mostrar_discretizacion_2d_plotly(self, fig):
         plotly_util = PlotlyUtil()
