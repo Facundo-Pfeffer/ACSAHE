@@ -297,7 +297,7 @@ class Poligono(object):
                             alpha=transparencia, linewidth=espesor, zorder=0)
 
         if mostrar_centroide:
-            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0)
+            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0, s=self.area/10)
         if texto_a_mostrar:
             plt.text(self.xg, self.yg, texto_a_mostrar)
 
@@ -532,7 +532,7 @@ class ElementoTrapecioCircular():
             self.segmentos_rectos[0].plot(ax, **style_data)
             self.segmentos_rectos[1].plot(ax, **style_data)
         if mostrar_centroide:
-            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0)
+            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0, s=self.area/10)
         return ax
         # Crear la figura y el gráfico
 
@@ -741,7 +741,7 @@ class SeccionArbitraria(object):
                                   transparencia=1)
 
     def mostrar_discretizacion_2d(self, ax):
-        [elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.8) for elemento in self.elementos]
+        [elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.6) for elemento in self.elementos]
 
     def mostrar_discretizacion_2d_plotly(self, fig):
         plotly_util = PlotlyUtil()
