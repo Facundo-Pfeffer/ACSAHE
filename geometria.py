@@ -152,13 +152,14 @@ class Poligono(object):
         self.segmentos_borde = self.obtener_segmentos_borde()
         valor_area = self.determinar_area_poligono()
         self.area = valor_area
-        self.nodo_centroide = self.determinar_centroide()
-        self.xg, self.yg = self.nodo_centroide.x, self.nodo_centroide.y
-        # Se definen estos atributos para determinar si el elemento fue modificado por una intersección (ver método)
-        self.nodos_interseccion_lista = []
-        self.numero_de_modificaciones = 0
-        self.nodo_centroide_original = copy.copy(self.nodo_centroide)
-        self.area_original = valor_area
+        if valor_area > tolerancia ** 2:
+            self.nodo_centroide = self.determinar_centroide()
+            self.xg, self.yg = self.nodo_centroide.x, self.nodo_centroide.y
+            # Se definen estos atributos para determinar si el elemento fue modificado por una intersección (ver método)
+            self.nodos_interseccion_lista = []
+            self.numero_de_modificaciones = 0
+            self.nodo_centroide_original = copy.copy(self.nodo_centroide)
+            self.area_original = valor_area
 
     @staticmethod
     def ordenar_nodos_poligono_convexo_antihorario(nodos=None):
@@ -174,8 +175,8 @@ class Poligono(object):
 
         # Calcular las distancias desde el centroide a cada nodo
         r = np.sqrt((x_array - x0) ** 2 + (y_array - y0) ** 2)
-        # Calcula el ángulo antihorario con respecto al eje x de cada punto, y ordena en base al mismo.
-        angulos = np.where((y_array - y0) > 0, np.arccos((x_array - x0) / r), 2 * np.pi - np.arccos((x_array - x0) / r))
+        # Calcula el ángulo antihorario con respecto al eje X de cada punto, y ordena basándose en el mismo.
+        angulos = np.arctan2(y_array - y0, x_array - x0)
         mask = np.argsort(angulos)
         x_sorted = x_array[mask]
         y_sorted = y_array[mask]
@@ -616,7 +617,7 @@ class Contorno(Poligono):
         lista_de_elementos = self.obtener_lista_de_elementos_preliminar(dx, dy)
         lista_de_elementos.sort(key=lambda elemento: (elemento.y, elemento.x))
         # Elementos con coordenadas no válidas deben ser limpiados
-        lista_elem_validos = [elem for elem in lista_de_elementos if not (math.isnan(elem.xg) or math.isnan(elem.yg))]
+        lista_elem_validos = [elem for elem in lista_de_elementos if elem.area > tolerancia ** 2 and (not (math.isnan(elem.xg) or math.isnan(elem.yg)))]
         return self.eliminar_elementos_fuera_de_contorno(
             lista_elem_validos)  # Limpieza adicional de elementos no validos.
 

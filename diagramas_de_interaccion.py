@@ -6,6 +6,7 @@ import numpy as np
 import traceback
 import os
 import warnings
+import colorsys
 from plotly.subplots import make_subplots
 from excel_manager import ExcelManager
 from acero_pretensado import BarraAceroPretensado
@@ -14,10 +15,12 @@ from hormigon import Hormigon
 from geometria import Nodo, Contorno, SeccionArbitraria, Segmento, ContornoCircular
 from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import plotly.graph_objects as go
+import webbrowser
+import tempfile
 
 from plotly_util import PlotlyUtil
 from tkinter import messagebox
-diferencia_admisible = 5
+diferencia_admisible = 1
 
 
 def show_message(message, titulo="Mensaje"):
@@ -34,7 +37,7 @@ class ObtenerDiagramaDeInteraccion2D:
         self.file_name = file_path
         self.ingreso_datos_wb = ExcelManager(file_path, "Ingreso de Datos")
         try:
-            self.angulo_plano_de_carga_esperado = angulo_plano_de_carga or self.obtener_plano_de_carga()
+            self.angulo_plano_de_carga_esperado = angulo_plano_de_carga if isinstance(angulo_plano_de_carga, int) or isinstance(angulo_plano_de_carga, float) else self.obtener_plano_de_carga()
             self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
             self.diagrama_interaccion_wb = ExcelManager(file_path, "Diagrama de Interacción 2D")
             # warnings.filterwarnings("error")
@@ -75,7 +78,7 @@ class ObtenerDiagramaDeInteraccion2D:
                 self.construir_grafica_seccion()
 
             self.lista_resultados = self.iterar()
-            normal_momento_phi = [[-x[0], x[1]/100, x[4]] for x in self.lista_resultados]
+            normal_momento_phi = [[-x["sumF"], x["M"]/100, x["phi"]] for x in self.lista_resultados]
             self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
             if len(self.lista_resultados) == 0:
                 show_message("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
@@ -94,23 +97,26 @@ class ObtenerDiagramaDeInteraccion2D:
         # self.mostrar_resultado(blanco_y_negro=False)
 
     def obtener_plano_de_carga(self):
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",number_of_rows_after_value=20, columns_range="A")
+        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", number_of_rows_after_value=20, columns_range="A")
         return self.ingreso_datos_wb.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2)
 
     def coordenadas_de_puntos_en_3d(self):
         X, Y, Z = [], [], []
         color_lista = []
+        phi_lista = []
+        if not self.lista_resultados:
+            return None
         for resultado in self.lista_resultados:
-            sum_f, momento, plano_def, tipo, phi = resultado
-            momento = momento / 100
-            x = math.cos(math.radians(self.angulo_plano_de_carga_esperado)) * momento
-            y = math.sin(math.radians(self.angulo_plano_de_carga_esperado)) * momento
-            z = -sum_f  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+            x = resultado["Mx"]
+            y = resultado["My"]
+            z = -resultado["sumF"]  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
             Z.append(z)
-            color_lista.append(self.numero_a_color_arcoiris(abs(plano_def[3])))
-        return (X, Y, Z), color_lista
+            phi_lista.append(resultado["phi"])
+            color = resultado["color"]
+            color_lista.append(f"rgb({color[0]},{color[1]},{color[2]})")
+        return (X, Y, Z, phi_lista), color_lista
 
     def obtener_plano_deformación_inicial(self):
         """Obtiene los parámetros del plano de deformación elástica inicial del hormigón, a partir de la acción del
@@ -368,7 +374,10 @@ class ObtenerDiagramaDeInteraccion2D:
         self.preparar_eje_pyplot(ax)
 
         for resultado in self.lista_resultados:
-            sumF, M, plano_def, tipo, phi = resultado
+            sumF = resultado["sumF"]
+            M = resultado["M"]
+            plano_def = resultado["plano_deformacion"]
+
             x = M / 100  # Pasaje de kNcm a kNm
             y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
@@ -380,7 +389,6 @@ class ObtenerDiagramaDeInteraccion2D:
                         marker=".",
                         s=100,
                         **color_kwargs
-                        # if tipo >= 0 else "x"
                         )
 
         return fig
@@ -426,19 +434,25 @@ class ObtenerDiagramaDeInteraccion2D:
         try:
             for plano_de_deformacion in self.planos_de_deformacion:
                 sol = fsolve(self.evaluar_diferencia_para_inc_eje_neutro,
-                             x0=self.angulo_plano_de_carga_esperado,
+                             x0=-self.angulo_plano_de_carga_esperado,
                              xtol=0.005,
                              args=plano_de_deformacion,
                              full_output=1,
-                             maxfev=50)  # Max fev = número de iteraciones máximo
+                             maxfev=70)  # Max fev = número de iteraciones máximo
                 theta, diferencia_plano_de_carga, sol_encontrada = sol[0][0], sol[1]['fvec'], sol[2] == 1
                 # test = self.evaluar_diferencia_para_inc_eje_neutro(theta, *plano_de_deformacion)
                 self.medir_diferencias.append((diferencia_plano_de_carga, plano_de_deformacion))
                 if sol_encontrada is True and abs(diferencia_plano_de_carga) < diferencia_admisible:
                     sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
                     lista_de_puntos.append(
-                        [sumF, self.obtener_momento_resultante(Mx, My), plano_de_deformacion, plano_de_deformacion[2],
-                         phi])
+                        {"sumF": sumF,
+                         "M": self.obtener_momento_resultante(Mx, My),
+                         "plano_de_deformacion": plano_de_deformacion,
+                         "color": self.numero_a_color_arcoiris(abs(plano_de_deformacion[3])),
+                         "phi": phi,
+                         "Mx": Mx,
+                         "My": My
+                         })
 
                 else:  # Punto Descartado, no se encontró solución.
                     self.lista_planos_sin_solucion.append((plano_de_deformacion, sol))
@@ -466,11 +480,11 @@ class ObtenerDiagramaDeInteraccion2D:
         ey = round(Mx / sumF, 5)
         if ex == 0 and ey == 0:  # Carga centrada, siempre "pertenece" al plano de carga
             return 0
-        angulo_plano_de_carga = self.obtener_angulo_resultante_momento(Mx, My)
-        alpha = 90 - self.angulo_plano_de_carga_esperado
-        if alpha < 0:
-            alpha = 180 + alpha
-        diferencia = angulo_plano_de_carga - alpha  # Apuntamos a que esto sea 0
+        angulo_momento_con_x = self.obtener_angulo_resultante_momento(Mx, My)
+        angulo_momento_esperado_con_x = 180 - abs(self.angulo_plano_de_carga_esperado)
+        if angulo_momento_esperado_con_x >= 180:
+            angulo_momento_esperado_con_x = angulo_momento_esperado_con_x - 180  # Para que se encuentre en rango [0, 180]
+        diferencia = angulo_momento_con_x - angulo_momento_esperado_con_x  # Apuntamos a que esto sea 0
         return diferencia
 
     @staticmethod
@@ -479,18 +493,10 @@ class ObtenerDiagramaDeInteraccion2D:
 
     @staticmethod
     def obtener_angulo_resultante_momento(Mx, My):
-        M = math.sqrt(Mx ** 2 + My ** 2)
-        if M == 0:
-            return
-        if abs(My) > 10:  # Valores muy cercanos a 0 tienden a desestabilizar esta comparación
-            inclinacion_vector_momento = math.degrees(math.acos(My / M))
-        elif abs(Mx) > 10:
-            inclinacion_vector_momento = math.degrees(math.asin(Mx / M))
-        elif My != 0:
-            inclinacion_vector_momento = math.degrees(math.atan(Mx / My))
-        else:  # My = 0 implica plano de carga vertical
-            inclinacion_vector_momento = 0
-        return inclinacion_vector_momento
+        angulo_x = math.degrees(math.atan2(My, Mx))
+        if angulo_x == 180:
+            return 0
+        return angulo_x if angulo_x >= 0 else angulo_x+180  # Para que se encuentre comprendido en el rango [0, 180]
 
     def obtener_ecuacion_plano_deformacion(self, EEH_girado, EA_girado, EAP_girado, plano_de_deformacion):
         """Construye la ecuación de una recta que pasa por los puntos (y_positivo,def_1) (y_negativo,def_2).
@@ -580,22 +586,35 @@ class ObtenerDiagramaDeInteraccion2D:
         lista_invertida = [(x[1], x[0], -x[2], -x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
         return lista_de_planos + lista_invertida
 
-    # def obtener_angulo_plano_de_carga(self):
-    #     rows_n = self.excel_wb.get_n_rows_after_value("INCLINACIÓN DEL PLANO DE CARGA", 5)
-    #     return self.excel_wb.get_value("E", rows_n[2])  # TODO mejorar
-
     @staticmethod
     def numero_a_color_arcoiris(numero):
         if numero < 0 or numero > 350:
             raise ValueError("El número debe estar entre 0 y 350")
 
-        numero_normalizado = numero / 350.0
+        adjusted_input = (numero / 350.0)
+        if adjusted_input < 0.5:  # Esto es aproximadamente la transición del rojo al verde
+            # A la primera mitad del espectro, le aplicamos una función que crece más lentamente
+            adjusted_input = pow(adjusted_input * 2, 1.5) / 2
+        else:
+            # Después le aplica esta progresión un poco más rápida
+            adjusted_input = 0.5 + (pow((adjusted_input - 0.5) * 2, 0.85) / 2)
 
-        rojo = int(max(0, min(255, 255 * (1 - numero_normalizado))))
-        verde = int(max(0, min(255, 255 * (1 - abs(numero_normalizado - 0.5) * 2))))
-        azul = int(max(0, min(255, 255 * numero_normalizado)))
+        non_linear_factor = math.sin(adjusted_input * math.pi / 2)
 
-        return [rojo / 255, verde / 255, azul / 255]
+        # Mapeando al rango de la librería hue (que va de 0 a 360)
+        hue = non_linear_factor * 330  # 330 controla que el color máximo sea púrpura (como un arcoíris)
+
+        # Para que los colores sean pseudo neón
+        saturation = 1.0  # 100%
+        lightness = 0.5  # 50%
+
+        rojo, verde, azul = colorsys.hls_to_rgb(hue / 360.0, lightness, saturation)
+
+        rojo = int(rojo * 255)
+        verde = int(verde * 255)
+        azul = int(azul * 255)
+
+        return [rojo, verde, azul]
 
     def obtener_matriz_acero_pasivo(self):
         lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
@@ -855,19 +874,55 @@ class ObtenerDiagramaDeInteraccion2D:
 
 class ObtenerDiagramaDeInteraccion3D:
 
-    def __init__(self, file_path, usar_plotly=False, **kwargs):
-        # self.lista_de_angulos_de_carga = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90,45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*16/4]
-        self.lista_de_angulos_de_carga = [0, 45, 90,135]
-        lista_x_total, lista_y_total, lista_z_total, lista_color = [], [], [], []
+    def __init__(self, file_path, script_dir="", file_name=None, usar_plotly=False, **kwargs):
+        self.lista_de_angulos_de_carga = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90, 45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*15/4, 45*16/4]
+        # self.lista_de_angulos_de_carga = [0, 45, 90, 135]
+        # self.lista_de_angulos_de_carga = [0, 22.5]
+        lista_x_total, lista_y_total, lista_z_total, lista_color, lista_text_total, lista_color_total = [], [], [], [], [], []
+        lista_x_total_sin_phi, lista_y_total_sin_phi, lista_z_total_sin_phi = [], [], []
+        data_subsets = {}
         for angulo_plano_de_carga in self.lista_de_angulos_de_carga:
-            warnings.simplefilter(action='ignore', category=UserWarning)
-            solucion_parcial = ObtenerDiagramaDeInteraccion2D(file_path, angulo_plano_de_carga, mostrar_resultado=False, mostrar_seccion=False, **kwargs)
+            # warnings.simplefilter(action='ignore', category=UserWarning)
+            solucion_parcial = ObtenerDiagramaDeInteraccion2D(file_path, angulo_plano_de_carga, mostrar_resultado=True)
             coordenadas, color = solucion_parcial.coordenadas_de_puntos_en_3d()
-            lista_x_parcial, lista_y_parcial, lista_z_parcial = coordenadas
+            lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial = coordenadas
+            texto = self.hover_text(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial, angulo_plano_de_carga)
+            data_subsets[str(angulo_plano_de_carga)] = {
+                "x": lista_x_parcial.copy(),
+                "y": lista_y_parcial.copy(),
+                "z": lista_z_parcial.copy(),
+                "text": texto.copy(),
+            }
             lista_x_total.extend(lista_x_parcial)
             lista_y_total.extend(lista_y_parcial)
             lista_z_total.extend(lista_z_parcial)
-            lista_color.extend(color)
+            lista_x_total_sin_phi.extend((np.array(lista_x_parcial)/np.array(lista_phi_parcial)).tolist())
+            lista_y_total_sin_phi.extend((np.array(lista_y_parcial)/np.array(lista_phi_parcial)).tolist())
+            lista_z_total_sin_phi.extend((np.array(lista_z_parcial)/np.array(lista_phi_parcial)).tolist())
+            lista_text_total.extend(texto)
+            lista_color_total.extend(color)
+
+        buttons = []
+        for angulo in self.lista_de_angulos_de_carga:
+            subset = data_subsets[str(angulo)]
+            button = dict(
+                label=f"λ={angulo}º",
+                method="update",
+                args=[{"x": [subset['x']], "y": [subset['y']], "z": [subset['z']], "text": [subset['text']]}],
+            )
+            buttons.append(button)
+        buttons.append(dict(
+            label="Mostrar Todos",
+            method="update",
+            args=[{"x": [lista_x_total], "y": [lista_y_total], "z": [lista_z_total], "text": [lista_text_total]}],
+            # Reset to original data
+        ))
+        # buttons.append(dict(
+        #     label="Mostrar Todos sin Phi",
+        #     method="update",
+        #     args=[{"x": [lista_x_total_sin_phi], "y": [lista_y_total_sin_phi], "z": [lista_z_total_sin_phi], "text": [lista_text_total]}],
+        #     # Reset to original data
+        # ))
 
         if usar_plotly is False:
             fig = plt.figure()
@@ -890,27 +945,19 @@ class ObtenerDiagramaDeInteraccion3D:
                     mode='markers',
                     marker=dict(
                         size=2,  # Adjust marker size as needed
-                        color=lista_z_total,  # Map colors to the Z values
-                        colorscale='Rainbow',  # Choose a color scale ('Rainbow' in this case)
+                        color=lista_color_total,  # Map colors to the Z values
+                        # colorscale='Rainbow',  # Choose a color scale ('Rainbow' in this case)
                     ),
-                    showlegend=False
-                )
-            fig2 = solucion_parcial.construir_grafica_seccion_plotly()
+                    showlegend=False,
+                    text=lista_text_total,  # Assign custom hover text here
+                    hoverinfo='text',
+            )
 
-            fig = make_subplots(rows=2, cols=1,
-                                specs=[
-                                [{"type": "scatter"}], [{"type": "scene"}]],
-                                subplot_titles=(f'Sección y Discretización<br>dx={solucion_parcial.dx}, dy={solucion_parcial.dx}', 'Diagrama de Interacción 3D'))
-            fig_1 = go.Figure(data=fig_1, layout_template="plotly_dark")
-            fig.update_layout(**fig2.layout.to_plotly_json())
-            for x in fig2["data"]:
-                fig.add_trace(
-                    x, row=1, col=1
-                )
-            fig.add_trace(fig_1["data"][0], row=2, col=1)
+            fig = go.Figure(data=fig_1, layout_template="plotly_dark")
+
             fig.update_layout(
                            title=dict(
-                               text=f"<b>{kwargs.get('titulo')}<br>ACSAHE V.1.0.0</b>",
+                               text=f"<b>ACSAHE V.1.0.0<br>Archivo: {file_name}</b>",
                                x=0.5,
                                font=dict(size=25, color="rgb(142, 180, 227)",
                                          family='Times New Roman')),
@@ -919,22 +966,46 @@ class ObtenerDiagramaDeInteraccion3D:
                                yaxis_title='Mx [kNm]',
                                zaxis_title='N [kN]',
                                xaxis=dict(
-                                   title_font=dict(family='Times New Roman'),
-
+                                   title_font=dict(family='Times New Roman', size=12),
                                    range=[min(lista_x_total), max(lista_x_total)]
                                ),
                                yaxis=dict(
-                                   title_font=dict(family='Times New Roman'),
+                                   title_font=dict(family='Times New Roman', size=12),
                                    range=[min(lista_y_total), max(lista_y_total)]
                                ),
                                zaxis=dict(
-                                   title_font=dict(family='Times New Roman'),
+                                   title_font=dict(family='Times New Roman', size=12),
                                    range=[min(lista_z_total), max(lista_z_total)]),
                                aspectmode='manual',  # Set aspect ratio manually
-                               aspectratio=dict(x=1, y=1, z=1)
+                               aspectratio=dict(x=1, y=1, z=1),
                            ))
-            # fig.update_scenes(aspectmode='data')
 
-            fig.write_html(f"{kwargs.get('titulo')} 1.html")
-            fig.show()
+            fig.update_layout(
+                updatemenus=[dict(
+                    type="buttons",
+                    font={"color": "black", "size": 12},
+                    direction="down",
+                    showactive=True,
+                    buttons=buttons,
+                )]
+            )
 
+            with open(f"{script_dir + '/' if script_dir else ''}acsahe.html", "r", encoding="UTF-8") as r,\
+                open(f"{script_dir + '/' if script_dir else ''}assets/css/main.css") as main_css,\
+                open(f"{script_dir + '/' if script_dir else ''}assets/css/noscript.css") as noscript_css:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_result_file:
+                    acsahe = r.read()
+                    graph_html = fig.to_html(full_html=False)
+                    tmp_result_file.write(acsahe.format(
+                        main_css=main_css.read(),
+                        noscript_css=noscript_css.read(),
+                        graph_html=graph_html).encode("utf-8"))
+                    tmp_file_path = tmp_result_file.name
+
+            # fig.show()
+            webbrowser.open('file://' + tmp_file_path)
+
+    @staticmethod
+    def hover_text(lista_x, lista_y, lista_z, lista_phi, a):
+        return [f"Mx: {round(x, 2)} kNm<br>My: {round(y, 2)} kNm<br>N: {round(z, 2)} kN<br>PHI: {round(phi, 2)}<br>λ={a}ª"
+                for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
