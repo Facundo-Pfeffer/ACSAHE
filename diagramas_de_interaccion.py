@@ -28,6 +28,7 @@ def show_message(message, titulo="Mensaje"):
 
 
 class ObtenerDiagramaDeInteraccion2D:
+    #  Cantidades de partes en las cuales se divide
     niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 24, "Fina": 50, "Muy Fina": 100}
     niveles_mallado_circular = {"Muy Gruesa": (3, 45), "Gruesa": (6, 30), "Media": (12, 10),
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
@@ -72,20 +73,19 @@ class ObtenerDiagramaDeInteraccion2D:
                 math.radians(phiy)) * (x)
             self.asignar_deformacion_hormigon_a_elementos_pretensados()
 
+            # if mostrar_resultado:
+            #     self.construir_grafica_seccion()
+
             self.lista_planos_sin_solucion = []
-
-            if mostrar_resultado:
-                self.construir_grafica_seccion()
-
             self.lista_resultados = self.iterar()
             normal_momento_phi = [[-x["sumF"], x["M"]/100, x["phi"]] for x in self.lista_resultados]
-            self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
-            if len(self.lista_resultados) == 0:
-                show_message("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
-                      "seleccionar 'VOLVER A VALORES POR DEFECTO'")
-            else:
-                show_message(f"Se obtuvieron {len(self.lista_resultados)}/{len(self.lista_planos_sin_solucion) + len(self.lista_resultados)} puntos con solución\n"
-                             f"Por favor, diríjase a la pestaña 'Diagrama de Interacción 2D' para ver los resultados", "RESULTADOS ACSAHE")
+            # self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
+            # if len(self.lista_resultados) == 0:
+            #     show_message("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
+            #           "seleccionar 'VOLVER A VALORES POR DEFECTO'")
+            # else:
+            #     show_message(f"Se obtuvieron {len(self.lista_resultados)}/{len(self.lista_planos_sin_solucion) + len(self.lista_resultados)} puntos con solución\n"
+            #                  f"Por favor, diríjase a la pestaña 'Diagrama de Interacción 2D' para ver los resultados", "RESULTADOS ACSAHE")
         except Exception as e:
             traceback.print_exc()
             show_message(e)
@@ -104,19 +104,21 @@ class ObtenerDiagramaDeInteraccion2D:
         X, Y, Z = [], [], []
         color_lista = []
         phi_lista = []
+        plano_def = []
         if not self.lista_resultados:
             return None
         for resultado in self.lista_resultados:
-            x = resultado["Mx"]
-            y = resultado["My"]
+            x = resultado["Mx"]/100
+            y = resultado["My"]/100
             z = -resultado["sumF"]  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
             X.append(x)
             Y.append(y)
             Z.append(z)
             phi_lista.append(resultado["phi"])
+            plano_def.append(resultado["plano_de_deformacion"])
             color = resultado["color"]
             color_lista.append(f"rgb({color[0]},{color[1]},{color[2]})")
-        return (X, Y, Z, phi_lista), color_lista
+        return (X, Y, Z, phi_lista), color_lista, plano_def
 
     def obtener_plano_deformación_inicial(self):
         """Obtiene los parámetros del plano de deformación elástica inicial del hormigón, a partir de la acción del
@@ -184,66 +186,11 @@ class ObtenerDiagramaDeInteraccion2D:
             scaleanchor="x",
             scaleratio=1,
         )
-        self.seccion_H.mostrar_contornos_2d_plotly(fig)
-        self.seccion_H.mostrar_discretizacion_2d_plotly(fig)
-        self.EA.cargar_barras_como_circulos_para_mostrar_plotly(fig)
-        self.EAP.cargar_barras_como_circulos_para_mostrar_plotly(fig)
 
-        # self.mostrar_plano_de_carga(ax)
-        # plt.title("Sección y Discretización", fontsize=40, fontweight='bold', horizontalalignment='center')
-        # plt.axis('equal')
-        # ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=20, fontweight='bold')
-        # ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=20, fontweight='bold')
-        # plt.xticks(fontsize=16)
-        # plt.yticks(fontsize=16)
+        plotly_util = PlotlyUtil(fig)
+        plotly_util.cargar_barras_como_circulos_para_mostrar_plotly(self.EA, self.EAP)
 
-        fig.update_layout(
-
-            title=dict(
-                text=f'<b>SECCIÓN Y DISCRETIZACIÓN<br></b>',
-                x=0.5,
-                font=dict(size=25, color="rgb(142, 180, 227)",
-                          family='Times New Roman')),
-            scene=dict(
-                xaxis_title='X [cm]',
-                yaxis_title='Y [cm]',
-                xaxis=dict(
-                    title_font=dict(family='Times New Roman'),
-                    range=(self.seccion_H.x_min, self.seccion_H.x_max)
-
-                ),
-                yaxis=dict(
-                    title_font=dict(family='Times New Roman'),
-                    range=(self.seccion_H.y_min, self.seccion_H.y_max)
-
-                )),
-            # aspectmode='manual',  # Set aspect ratio manually
-            # aspectratio=dict(x=1, y=1)
-            )
-        fig.show()
-        return fig
-
-    def construir_grafica_seccion_plotly(self, fig=None):
-        """Muestra la sección obtenida luego del proceso de discretización."""
-        if not fig:
-            fig = go.Figure(layout_template="plotly_dark")
-        fig.update_yaxes(
-            scaleanchor="x",
-            scaleratio=1,
-        )
-        self.seccion_H.mostrar_contornos_2d_plotly(fig)
-        self.seccion_H.mostrar_discretizacion_2d_plotly(fig)
-        plotly_util = PlotlyUtil()
-        plotly_util.cargar_barras_como_circulos_para_mostrar_plotly(fig, self.EA, self.EAP)
-
-
-        # self.mostrar_plano_de_carga(ax)
-        # plt.title("Sección y Discretización", fontsize=40, fontweight='bold', horizontalalignment='center')
-        # plt.axis('equal')
-        # ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=20, fontweight='bold')
-        # ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=20, fontweight='bold')
-        # plt.xticks(fontsize=16)
-        # plt.yticks(fontsize=16)
+        self.seccion_H.plotly(fig)
 
         fig.update_layout(
 
@@ -625,8 +572,8 @@ class ObtenerDiagramaDeInteraccion2D:
             x, y, d = self.obtener_valores_acero_tabla(fila)
             if d == 0:
                 continue
-            xg = round(x - self.XG, 5)
-            yg = round(y - self.YG, 5)
+            xg = round(x - self.XG, 3)
+            yg = round(y - self.YG, 3)
             resultado.append(BarraAceroPasivo(xg, yg, d))
         return resultado
 
@@ -660,8 +607,8 @@ class ObtenerDiagramaDeInteraccion2D:
             x, y, area = self.obtener_valores_acero_tabla(fila)
             if area == 0:
                 continue
-            xg = round(x - self.XG, 5)
-            yg = round(y - self.YG, 5)
+            xg = round(x - self.XG, 3)
+            yg = round(y - self.YG, 3)
             resultado.append(BarraAceroPretensado(xg, yg, area))
         return resultado
 
@@ -714,7 +661,7 @@ class ObtenerDiagramaDeInteraccion2D:
                                                                            rows_range=filas_contorno)[1:]:
                     x = self.ingreso_datos_wb.get_value("C", fila_n)
                     y = self.ingreso_datos_wb.get_value("E", fila_n)
-                    coordenadas_nodos.append(Nodo(x, y))  # Medidas en centímetros
+                    coordenadas_nodos.append(Nodo(round(x, 3), round(y, 3)))  # Medidas en centímetros
                 contorno = Contorno(coordenadas_nodos, signo, indice, ordenar=True)
                 if signo > 0:  # Solo se utilizan los contornos positivos para definir la discretización
                     max_x.append(max(contorno.x))
@@ -737,7 +684,7 @@ class ObtenerDiagramaDeInteraccion2D:
                     min_y.append(y-r_ext)
                     delta_x.append(r_ext-r_int)
                     delta_y.append(r_ext-r_int)
-                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Nodo(x, y),indice=indice, radios=(r_int, r_ext), signo=signo)
+                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Nodo(x, y), indice=indice, radios=(r_int, r_ext), signo=signo)
             else:
                 pass
         self.max_x_seccion = max(max_x)
@@ -748,7 +695,7 @@ class ObtenerDiagramaDeInteraccion2D:
         return EEH
 
     def get_discretizacion(self, delta_x, delta_y, contornos):
-        hay_contorno_circular = any(isinstance(x, ContornoCircular) for x in contornos)
+        hay_contorno_circular = any(isinstance(v, ContornoCircular) for k, v in contornos.items())
         hay_contorno_rectangular = any(not isinstance(x, ContornoCircular) for x in contornos)
         rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",number_of_rows_after_value=20, columns_range="A")
         nivel_discretizacion = self.ingreso_datos_wb.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
@@ -875,16 +822,16 @@ class ObtenerDiagramaDeInteraccion2D:
 class ObtenerDiagramaDeInteraccion3D:
 
     def __init__(self, file_path, script_dir="", file_name=None, usar_plotly=False, **kwargs):
-        self.lista_de_angulos_de_carga = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90, 45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*15/4, 45*16/4]
-        # self.lista_de_angulos_de_carga = [0, 45, 90, 135]
-        # self.lista_de_angulos_de_carga = [0, 22.5]
+        # self.lista_de_angulos_de_carga = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90, 45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*15/4, 45*16/4]
+        self.lista_de_angulos_de_carga = [0, 45, 90, 135]
+        # self.lista_de_angulos_de_carga = [0]
         lista_x_total, lista_y_total, lista_z_total, lista_color, lista_text_total, lista_color_total = [], [], [], [], [], []
         lista_x_total_sin_phi, lista_y_total_sin_phi, lista_z_total_sin_phi = [], [], []
         data_subsets = {}
         for angulo_plano_de_carga in self.lista_de_angulos_de_carga:
             # warnings.simplefilter(action='ignore', category=UserWarning)
             solucion_parcial = ObtenerDiagramaDeInteraccion2D(file_path, angulo_plano_de_carga, mostrar_resultado=True)
-            coordenadas, color = solucion_parcial.coordenadas_de_puntos_en_3d()
+            coordenadas, color, plano_de_def = solucion_parcial.coordenadas_de_puntos_en_3d()
             lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial = coordenadas
             texto = self.hover_text(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial, angulo_plano_de_carga)
             data_subsets[str(angulo_plano_de_carga)] = {
@@ -901,6 +848,8 @@ class ObtenerDiagramaDeInteraccion3D:
             lista_z_total_sin_phi.extend((np.array(lista_z_parcial)/np.array(lista_phi_parcial)).tolist())
             lista_text_total.extend(texto)
             lista_color_total.extend(color)
+
+        fig_seccion = solucion_parcial.construir_grafica_seccion_plotly()
 
         buttons = []
         for angulo in self.lista_de_angulos_de_carga:
@@ -953,6 +902,9 @@ class ObtenerDiagramaDeInteraccion3D:
                     hoverinfo='text',
             )
 
+            rango_min = min(min(lista_x_total), min(lista_y_total))
+            rango_max = max(max(lista_x_total), max(lista_y_total))
+
             fig = go.Figure(data=fig_1, layout_template="plotly_dark")
 
             fig.update_layout(
@@ -967,11 +919,11 @@ class ObtenerDiagramaDeInteraccion3D:
                                zaxis_title='N [kN]',
                                xaxis=dict(
                                    title_font=dict(family='Times New Roman', size=12),
-                                   range=[min(lista_x_total), max(lista_x_total)]
+                                   range=[rango_min, rango_max]
                                ),
                                yaxis=dict(
                                    title_font=dict(family='Times New Roman', size=12),
-                                   range=[min(lista_y_total), max(lista_y_total)]
+                                   range=[rango_min, rango_max]
                                ),
                                zaxis=dict(
                                    title_font=dict(family='Times New Roman', size=12),
@@ -999,7 +951,8 @@ class ObtenerDiagramaDeInteraccion3D:
                     tmp_result_file.write(acsahe.format(
                         main_css=main_css.read(),
                         noscript_css=noscript_css.read(),
-                        graph_html=graph_html).encode("utf-8"))
+                        html_seccion=fig_seccion.to_html(full_html=False),
+                        html_resultado=graph_html).encode("utf-8"))
                     tmp_file_path = tmp_result_file.name
 
             # fig.show()
@@ -1007,5 +960,5 @@ class ObtenerDiagramaDeInteraccion3D:
 
     @staticmethod
     def hover_text(lista_x, lista_y, lista_z, lista_phi, a):
-        return [f"Mx: {round(x, 2)} kNm<br>My: {round(y, 2)} kNm<br>N: {round(z, 2)} kN<br>PHI: {round(phi, 2)}<br>λ={a}ª"
-                for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
+        return [f"Mx: {round(x, 2)} kNm<br>My: {round(y, 2)} kNm<br>N: {round(z, 2)} kN<br>PHI: {round(phi, 2)}<br>λ={a}°"
+                for x, y, z, phi, plano_def in zip(lista_x, lista_y, lista_z, lista_phi)]
