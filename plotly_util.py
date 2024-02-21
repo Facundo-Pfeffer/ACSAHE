@@ -1,4 +1,5 @@
 import plotly.graph_objects as go
+from plotly.graph_objs.scatter.legendgrouptitle import Font
 import hashlib
 import math
 import numpy as np
@@ -21,25 +22,6 @@ class PlotlyUtil(object):
         )
         return fig
 
-    def colores_random_por_string(self, string):
-        crimson_scale_colors = [
-            "rgb(255, 0, 0)",  # Pure Red
-            "rgb(255, 255, 0)",  # Yellow
-            "rgb(0, 0, 255)",  # Blue
-            "rgb(0, 128, 0)",  # Green
-            "rgb(255, 0, 255)",  # Magenta
-            "rgb(255, 140, 0)",  # Dark Orange
-            "rgb(0, 255, 255)",  # Cyan
-            "rgb(128, 0, 128)",  # Purple
-            "rgb(255, 165, 0)",  # Orange
-            "rgb(139, 0, 0)"  # Dark Red
-        ]
-
-        if not self.strings_y_color.get(string):
-            self.strings_y_color.update({string: crimson_scale_colors[min(self.indice_color, len(crimson_scale_colors))]})
-            self.indice_color = self.indice_color + 1
-        return crimson_scale_colors[self.indice_color-1]
-
     def plot_poligono(self, elemento, color, espesor, transparencia):
         x_borde = []
         y_borde = []
@@ -57,7 +39,7 @@ class PlotlyUtil(object):
                 color=color,
             )))
 
-    def plot_seccion(self, seccion):
+    def plot_seccion(self, seccion, lista_de_angulos_plano_de_carga):
 
         for contorno in seccion.contornos_positivos+seccion.contornos_negativos:
             if contorno.tipo == "Poligonal":
@@ -88,6 +70,55 @@ class PlotlyUtil(object):
                      hoverinfo='skip',
                      showlegend=False,
                      )))
+
+        self.plot_angulos_planos_de_carga(seccion, lista_de_angulos_plano_de_carga)
+
+    def plot_angulos_planos_de_carga(self, seccion, lista_ang_planos_de_carga):
+        lista_ang_planos_de_carga.sort()
+        xmin, xmax, ymin, ymax = seccion.x_min, seccion.x_max, seccion.y_min, seccion.y_max
+
+        line_styles = ['solid', 'dash', 'dot', 'dashdot']
+        line_colors = ['grey', 'white']
+
+        # Adjust limits to include a margin
+        margin = 0.05  # 5% of each axis range
+        xmin_margin = xmin - (xmax - xmin) * margin
+        xmax_margin = xmax + (xmax - xmin) * margin
+        ymin_margin = ymin - (ymax - ymin) * margin
+        ymax_margin = ymax + (ymax - ymin) * margin
+
+        for i, angulo in enumerate(lista_ang_planos_de_carga):
+            angulo_rad = np.radians(angulo)
+            x_intersect_min = xmin_margin
+            x_intersect_max = xmax_margin
+            if angulo != 0:
+                m = np.tan(np.pi / 2 - angulo_rad)  # Slope of the line
+                y_intersec_xmin = m * (xmin_margin - (xmin + xmax) / 2) + (ymin + ymax) / 2
+                y_intersec_xmax = m * (xmax_margin - (xmin + xmax) / 2) + (ymin + ymax) / 2
+
+                if abs(y_intersec_xmin) > abs(ymin_margin):
+                    x_intersect_min = ymin_margin/m
+                    x_intersect_max = ymax_margin/m
+                    y_intersec_xmax = ymax_margin
+                    y_intersec_xmin = ymin_margin
+
+                puntos = [(x_intersect_min, y_intersec_xmin), (x_intersect_max, y_intersec_xmax)]
+            else:
+                puntos = [(0, ymin_margin), (0, ymax_margin)]
+
+            # Choose line style based on index, cycling through the list of styles
+            line_style = line_styles[i % len(line_styles)]
+            line_color = line_colors[i // len(line_styles) % len(line_colors)]
+
+            # Add line to the figure
+            x_puntos, y_puntos = zip(*puntos)
+            self.fig.add_trace(go.Scatter(x=x_puntos, y=y_puntos, mode='lines',
+                                          line=dict(color=line_color, width=3, dash=line_style),
+                                          visible=True,
+                                          legendgroup="group0",
+                                          legendgrouptitle={"text": "PLANOS DE CARGA"},
+                                          name=f"λ: {angulo}°"))
+
 
     @staticmethod
     def generar_color_unico_variantes(input_string):
@@ -123,47 +154,84 @@ class PlotlyUtil(object):
 
         return color_code
 
+    def colores_random_por_string(self, string):
+        crimson_scale_colors = [
+            "rgb(255, 0, 0)",  # Pure Red
+            "rgb(241, 196, 15)",  # Gold: Stands out against cyan, less harsh than pure yellow
+            "rgb(46, 204, 113)",  # Emerald
+            "rgb(0, 0, 255)",  # Blue
+            "rgb(255, 0, 255)",  # Magenta
+            "rgb(255, 140, 0)",  # Dark Orange
+            "rgb(0, 255, 255)",  # Cyan
+            "rgb(128, 0, 128)",  # Purple
+            "rgb(255, 165, 0)",  # Orange,
+            "rgb(139, 0, 0)",  # Dark Red
+
+        ]
+
+        if string not in self.strings_y_color:
+            color = crimson_scale_colors[self.indice_color % len(crimson_scale_colors)]
+            self.strings_y_color[string] = color
+            # Incrementamos el índice para la próxima asignación
+            self.indice_color += 1
+        return self.strings_y_color[string]
+
     def cargar_barras_como_circulos_para_mostrar_plotly(self, barras_pasivo, barras_activo):
         lista_de_diametros = set()
         shapes_list = []
         x_for_hover_text = []
         y_for_hover_text = []
         text_for_hover_text = []
-        for barra in barras_pasivo:
-            radio = barra.diametro/20
-            acero_y_diamtro_string = f"{barra.tipo} Ø{barra.diametro}mm"
-            default_kwargs = dict(type="circle",
-                                  xref="x", yref="y",
-                                  x0=barra.xg - radio, y0=barra.yg - radio,
-                                  x1=barra.xg + radio, y1=barra.yg + radio,
-                                  legendgroup="group",
-                                  legendgrouptitle_text="ACERO PASIVO",
-                                  # legend="legend",
-                                  fillcolor=self.colores_random_por_string(acero_y_diamtro_string),
-                                  line_color=self.colores_random_por_string(acero_y_diamtro_string),
-                                  name=acero_y_diamtro_string,
-                                  )
-            shapes_list.append(dict(showlegend=acero_y_diamtro_string not in lista_de_diametros, **default_kwargs))
+        color = []
+        for barra in barras_pasivo + barras_activo:  # Combine for simplicity
+            # Determine if it's pasivo or activo based on the type of 'barra'
+            tipo = "ACERO PASIVO" if barra in barras_pasivo else "ACERO ACTIVO"
+            if barra in barras_pasivo:
+                radio = barra.diametro / 20
+                acero_y_diamtro_string = f"{barra.tipo}<br>Ø{barra.diametro}mm"
+                hover_text = f"x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Ø{barra.diametro}mm"
+
+            else:
+                radio = (barra.area / math.pi) ** 0.5  # Equivalente
+                acero_y_diamtro_string = f"{barra.tipo}: {barra.area}cm²"
+                hover_text = f"x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Área efectiva: {barra.area}cm²"
+
+            # Add shapes for circles
+            shapes_list.append(dict(
+                type="circle",
+                xref="x", yref="y",
+                x0=barra.xg - radio, y0=barra.yg - radio,
+                x1=barra.xg + radio, y1=barra.yg + radio,
+                fillcolor=self.colores_random_por_string(acero_y_diamtro_string),
+                line_color=self.colores_random_por_string(acero_y_diamtro_string),
+                legendgroup=f"group{1 if tipo=='ACERO PASIVO' else 2}",
+                legendgrouptitle_text=tipo,
+                name=acero_y_diamtro_string,
+                showlegend=acero_y_diamtro_string not in lista_de_diametros
+            ))
             lista_de_diametros.add(acero_y_diamtro_string)
+
+            # Prepare hover text data
             x_for_hover_text.append(barra.xg)
             y_for_hover_text.append(barra.yg)
-            text_for_hover_text.append(f"x: {barra.xg} cm<br>y: {barra.yg} cm<br>Ø: {barra.diametro} mm")
-        for barra in barras_activo:
-            radio_equivalente = (barra.area / math.pi) ** 0.5
-            acero_y_diamtro_string = f"{barra.tipo}: {barra.area}cm²"
-            default_kwargs = dict(type="circle",
-                                  xref="x", yref="y",
-                                  x0=barra.xg - radio_equivalente, y0=barra.yg - radio_equivalente,
-                                  x1=barra.xg + radio_equivalente, y1=barra.yg + radio_equivalente,
-                                  legendgroup="group2",
-                                  legendgrouptitle_text="ACERO ACTIVO",
-                                  fillcolor=self.colores_random_por_string(acero_y_diamtro_string),
-                                  line_color=self.colores_random_por_string(acero_y_diamtro_string),
-                                  name=acero_y_diamtro_string,
-                                  )
-            shapes_list.append(dict(showlegend=acero_y_diamtro_string not in lista_de_diametros, **default_kwargs))
-            lista_de_diametros.add(acero_y_diamtro_string)
+            text_for_hover_text.append(hover_text)
+            color.append(self.colores_random_por_string(acero_y_diamtro_string))
+
+
         self.fig.update_layout(shapes=shapes_list)
+
+
+
+        self.fig.add_trace(go.Scatter(
+            x=x_for_hover_text,
+            y=y_for_hover_text,
+            mode='markers',
+            marker=dict(size=0),
+            hoverinfo='text',
+            text=text_for_hover_text,
+            showlegend=False,
+            hoverlabel=dict(bgcolor=color),
+        ))
 
     @staticmethod
     def plotly_arc(xc, yc, radio, angulo_inicial, angulo_final, arc_division=50, color="Cyan", espesor=1, transparencia=1.00):

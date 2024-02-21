@@ -154,6 +154,8 @@ class Poligono(object):
         self.total_de_nodos = len(nodos)
         self.segmentos_borde = self.obtener_segmentos_borde()
         valor_area = self.determinar_area_poligono()
+        if valor_area == 0 and isinstance(self, Contorno):
+            raise Exception(f"El contorno de índice {self.indice} contiene área 0. Por favor, revisar la entrada de datos.")
         self.area = valor_area
         if valor_area > tolerancia ** 2:
             self.nodo_centroide = self.determinar_centroide()
@@ -787,6 +789,6 @@ class SeccionArbitraria(object):
     def obtener_valores_extremos(self):
         return min(x.xg for x in self.elementos), max(x.xg for x in self.elementos), min(x.yg for x in self.elementos), max(x.yg for x in self.elementos)
 
-    def plotly(self, fig):
+    def plotly(self, fig, planos_de_carga):
         plotly_util = PlotlyUtil(fig=fig)
-        plotly_util.plot_seccion(seccion=self)
+        plotly_util.plot_seccion(seccion=self, lista_de_angulos_plano_de_carga=planos_de_carga)

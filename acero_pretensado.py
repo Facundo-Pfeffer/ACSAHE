@@ -6,8 +6,8 @@ class BarraAceroPretensado():
     tipos_de_acero_y_valores = {
         "BARRAS 1050":
             {
-                "fpu": 1050,
-                "fpy": 952,
+                "fpu": 1050/10,  # kN/cm²
+                "fpy": 952/10,  # kN/cm²
                 "epu": 0.041,
                 "N": 7.1,
                 "K": 1.0041,
@@ -15,8 +15,8 @@ class BarraAceroPretensado():
             },
         "TRENZAS C1650":
             {
-                "fpu": 1650,
-                "fpy": 1505,
+                "fpu": 1650/10,  # kN/cm²
+                "fpy": 1505/10,  # kN/cm²
                 "epu": 0.087,
                 "N": 6.060,
                 "K": 1.0325,
@@ -24,8 +24,8 @@ class BarraAceroPretensado():
             },
         "TRENZAS C1900":
             {
-                "fpu": 1860,  # Mpa
-                "fpy": 1665,
+                "fpu": 1860/10,  # kN/cm²
+                "fpy": 1665/10,  # kN/cm²
                 "epu": 0.069,
                 "N": 7.344,
                 "K": 1.0618,
@@ -39,7 +39,7 @@ class BarraAceroPretensado():
     K = None
     Q = None
     Eps = None
-    deformacion_de_pretensado_inicial = None
+    deformacion_de_pretensado_inicial = 0.00
 
     def __init__(self, x, y, area):
         self.x = x
@@ -54,7 +54,7 @@ class BarraAceroPretensado():
     def relacion_constitutiva(self, e):
         """Relación constitutiva propuesta por Menegotto y Pinto, se recomienda que este método sea sobrescrito
         con la relación constitutiva que quiera utilizarse para el acero de pretensado, como la del fabricante."""
-        return self.Eps * e * (self.Q + (1-self.Q)/((1+(self.Eps*abs(e)/(self.K*self.fpy/10))**(self.N))**(1/self.N)))  #  kN/cm²
+        return self.Eps * e * (self.Q + (1-self.Q)/((1+(self.Eps*abs(e)/(self.K*self.fpy))**(self.N))**(1/self.N)))  #  kN/cm²
 
     def mostrar_relacion_constitutiva(self):
         particion_e = range(1100)

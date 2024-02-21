@@ -1,25 +1,25 @@
-from scipy.optimize import fsolve
+import colorsys
 import logging
 import math
+import os
+import tempfile
+import traceback
+import webbrowser
+from tkinter import messagebox
+
 import matplotlib.pyplot as plt
 import numpy as np
-import traceback
-import os
-import warnings
-import colorsys
-from plotly.subplots import make_subplots
-from excel_manager import ExcelManager
-from acero_pretensado import BarraAceroPretensado
-from acero_pasivo import BarraAceroPasivo
-from hormigon import Hormigon
-from geometria import Nodo, Contorno, SeccionArbitraria, Segmento, ContornoCircular
-from matrices import MatrizAceroPasivo, MatrizAceroActivo
 import plotly.graph_objects as go
-import webbrowser
-import tempfile
+from scipy.optimize import fsolve
 
+from acero_pasivo import BarraAceroPasivo
+from acero_pretensado import BarraAceroPretensado
+from excel_manager import ExcelManager
+from geometria import Nodo, Contorno, SeccionArbitraria, Segmento, ContornoCircular
+from hormigon import Hormigon
+from matrices import MatrizAceroPasivo, MatrizAceroActivo
 from plotly_util import PlotlyUtil
-from tkinter import messagebox
+
 diferencia_admisible = 1
 
 
@@ -27,100 +27,132 @@ def show_message(message, titulo="Mensaje"):
     messagebox.showinfo(titulo, message)
 
 
-class ObtenerDiagramaDeInteraccion2D:
+class ResolucionGeometrica:
     #  Cantidades de partes en las cuales se divide
     niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 24, "Fina": 50, "Muy Fina": 100}
     niveles_mallado_circular = {"Muy Gruesa": (3, 45), "Gruesa": (6, 30), "Media": (12, 10),
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
 
-    def __init__(self, file_path, angulo_plano_de_carga=None, mostrar_resultado=True):
+    def __init__(self, file_path):
+        self.ingreso_datos_wb, self.armaduras_pasivas_wb, self.armaduras_activas_wb, self.diagrama_interaccion_wb = None, None, None, None
         self.max_x_seccion, self.min_x_seccion, self.max_y_seccion, self.min_y_seccion = None, None, None, None
+        self.lista_ang_plano_de_carga = set()
         self.file_name = file_path
-        self.ingreso_datos_wb = ExcelManager(file_path, "Ingreso de Datos")
         try:
-            self.angulo_plano_de_carga_esperado = angulo_plano_de_carga if isinstance(angulo_plano_de_carga, int) or isinstance(angulo_plano_de_carga, float) else self.obtener_plano_de_carga()
-            self.armaduras_pasivas_wb = ExcelManager(file_path, "Armaduras Pasivas")
-            self.diagrama_interaccion_wb = ExcelManager(file_path, "Diagrama de Interacción 2D")
-            # warnings.filterwarnings("error")
+            self.cargar_hojas_de_calculo()
 
-            self.def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
-            self.def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
-            self.hormigon = Hormigon(tipo=self.ingreso_datos_wb.get_value("C", "4"))  # TODO mejorar
-            self.tipo_estribo = self.ingreso_datos_wb.get_value("E", "10")
+            self.problema = self.obtener_problema_a_resolver()
 
-            self.setear_propiedades_acero_pasivo()
-            self.setear_propiedades_acero_activo()
-            self.medir_diferencias = []
+            self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
+            self.cargar_propiedades_materiales()
 
             self.seccion_H = self.obtener_matriz_hormigon()
-            self.discretizacion = {"ΔX": f"{round(self.seccion_H.dx,2)}cm" if self.seccion_H.dx else None,
-                                   "ΔY": f"{round(self.seccion_H.dy,2)}cm" if self.seccion_H.dy else None,
-                                   "Δr": f"{round(self.seccion_H.dr,2)}cm" if self.seccion_H.dr else None,
-                                   "Δθ": f"{round(self.seccion_H.d_ang,2)}°" if self.seccion_H.d_ang else None}
-            self.EEH = self.seccion_H.elementos
+
             self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
 
+            self.EEH = self.seccion_H.elementos  # Matriz Hormigón
             self.EA = self.obtener_matriz_acero_pasivo()
             self.EAP = self.obtener_matriz_acero_pretensado()
 
             self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
             self.planos_de_deformacion = self.obtener_planos_de_deformacion()
-            # self.mostrar_planos_de_deformacion()
-            ec, phix, phiy = self.obtener_plano_deformación_inicial()
+
+            ec, phix, phiy = self.obtener_plano_deformación_inicial_pretensado()
             # self.print_result_tridimensional(ec, phix, phiy)
             self.ec_plano_deformacion_elastica_inicial = lambda x, y: ec + math.tan(math.radians(phix)) * (
                 y) + math.tan(
-                math.radians(phiy)) * (x)
+                math.radians(phiy)) * x
             self.asignar_deformacion_hormigon_a_elementos_pretensados()
 
-            # if mostrar_resultado:
-            #     self.construir_grafica_seccion()
-
-            self.lista_planos_sin_solucion = []
-            self.lista_resultados = self.iterar()
-            normal_momento_phi = [[-x["sumF"], x["M"]/100, x["phi"]] for x in self.lista_resultados]
-            # self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
-            # if len(self.lista_resultados) == 0:
-            #     show_message("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
-            #           "seleccionar 'VOLVER A VALORES POR DEFECTO'")
-            # else:
-            #     show_message(f"Se obtuvieron {len(self.lista_resultados)}/{len(self.lista_planos_sin_solucion) + len(self.lista_resultados)} puntos con solución\n"
-            #                  f"Por favor, diríjase a la pestaña 'Diagrama de Interacción 2D' para ver los resultados", "RESULTADOS ACSAHE")
         except Exception as e:
             traceback.print_exc()
-            show_message(e)
+            message = f"Error en la generación de la geometría:\n{e}"
+            show_message(message)
             raise e
-        finally:
-            logging.log(1, "Se terminó la ejecución")
+
         # self.medir_diferencias.sort(reverse=True)
         # print(self.medir_diferencias)
         # self.mostrar_resultado(blanco_y_negro=False)
 
-    def obtener_plano_de_carga(self):
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN", number_of_rows_after_value=20, columns_range="A")
-        return self.ingreso_datos_wb.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2)
+    def cargar_hojas_de_calculo(self):
+        self.ingreso_datos_wb = ExcelManager(self.file_name, "Ingreso de Datos")
+        self.armaduras_pasivas_wb = ExcelManager(self.file_name, "Armaduras Pasivas")
+        self.armaduras_activas_wb = ExcelManager(self.file_name, "Armaduras Activas")
+        self.diagrama_interaccion_wb = ExcelManager(self.file_name, "Diagrama de Interacción 2D")
 
-    def coordenadas_de_puntos_en_3d(self):
-        X, Y, Z = [], [], []
-        color_lista = []
-        phi_lista = []
-        plano_def = []
-        if not self.lista_resultados:
-            return None
-        for resultado in self.lista_resultados:
-            x = resultado["Mx"]/100
-            y = resultado["My"]/100
-            z = -resultado["sumF"]  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
-            X.append(x)
-            Y.append(y)
-            Z.append(z)
-            phi_lista.append(resultado["phi"])
-            plano_def.append(resultado["plano_de_deformacion"])
-            color = resultado["color"]
-            color_lista.append(f"rgb({color[0]},{color[1]},{color[2]})")
-        return (X, Y, Z, phi_lista), color_lista, plano_def
+    def agregar_ang(self, ang):
+        """Normaliza a 2 decimales para que no haya incompatibilidades entre los elementos."""
+        self.lista_ang_plano_de_carga.add(round(ang, 2))
 
-    def obtener_plano_deformación_inicial(self):
+    def obtener_problema_a_resolver(self):
+        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("RESULTADOS",
+                                                                  number_of_rows_after_value=20, columns_range="A")
+
+        tipo = self.ingreso_datos_wb.get_value_on_the_right("Tipo", rows_range, 2)
+        verificacion = self.ingreso_datos_wb.get_value_on_the_right("Verificación de Estados", rows_range, 2)
+        informe_html = self.ingreso_datos_wb.get_value_on_the_right("Generar Informe HTML/PDF", rows_range, 2)
+        self.obtener_planos_de_cargados(tipo, rows_range)
+        puntos_a_verificar = self.obtener_puntos_a_verificar(tipo)
+        self.lista_ang_plano_de_carga = list(self.lista_ang_plano_de_carga)
+        return {
+            "tipo": tipo,
+            "verificacion": isinstance(verificacion, str) and verificacion == "Sí",
+            "informe_html":  isinstance(informe_html, str) and informe_html == "Sí",
+            "lista_planos_de_carga": list(self.lista_ang_plano_de_carga),
+            "puntos_a_verificar":  puntos_a_verificar,
+        }
+
+    def obtener_planos_de_cargados(self, tipo, rows_range):
+        if tipo == "2D":
+            self.agregar_ang(self.ingreso_datos_wb.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2))
+        else:  # 3D
+            cantidad_planos_de_carga = int(self.ingreso_datos_wb.get_value_on_the_right("Cantidad de Planos de Carga", rows_range, 2))
+            planos_de_carga_fila = self.ingreso_datos_wb.get_n_rows_after_value(
+                "Cantidad de Planos de Carga",
+                cantidad_planos_de_carga+2,
+            )
+            for ang in [self.ingreso_datos_wb.get_value("C", row_n) for row_n in planos_de_carga_fila[2:]]:
+                self.agregar_ang(ang)
+
+    def obtener_puntos_a_verificar(self, tipo):
+        cantidad_de_estados = int(
+            self.ingreso_datos_wb.get_value_on_the_right("Cantidad de Estados", n_column=2))
+        estados_fila_lista = self.ingreso_datos_wb.get_n_rows_after_value(
+            "Cantidad de Estados",
+            cantidad_de_estados + 3,
+        )
+        lista_estados = []
+        for estado_fila in estados_fila_lista[3:]:
+            if tipo == "2D":
+                estado = {
+                    "nombre": self.ingreso_datos_wb.get_value("A", estado_fila),
+                    "P": self.ingreso_datos_wb.get_value("C", estado_fila),
+                    "M": self.ingreso_datos_wb.get_value("E", estado_fila),
+                }
+            else:
+                estado = {
+                    "nombre": self.ingreso_datos_wb.get_value("A", estado_fila),
+                    "P": self.ingreso_datos_wb.get_value("C", estado_fila),
+                    "Mx": self.ingreso_datos_wb.get_value("E", estado_fila),
+                    "My": self.ingreso_datos_wb.get_value("G", estado_fila),
+                    "plano_de_carga": self.ingreso_datos_wb.get_value("H", estado_fila),
+                }
+                self.agregar_ang(estado["plano_de_carga"])
+            lista_estados.append(estado)
+        return lista_estados
+
+    def cargar_propiedades_materiales(self):
+
+        self.hormigon = Hormigon(tipo=self.ingreso_datos_wb.get_value("C", "4"))
+        self.tipo_estribo = self.ingreso_datos_wb.get_value("E", "10")
+
+        def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
+        self.setear_propiedades_acero_pasivo(def_de_rotura_a_pasivo)
+
+        def_de_pretensado_inicial = self.obtener_def_de_pretensado_inicial()
+        self.setear_propiedades_acero_activo(def_de_pretensado_inicial)
+
+    def obtener_plano_deformación_inicial_pretensado(self):
         """Obtiene los parámetros del plano de deformación elástica inicial del hormigón, a partir de la acción del
         pretensado sobre dicha sección."""
         if not self.EAP:  # Caso de Hormigón Armado
@@ -128,7 +160,7 @@ class ObtenerDiagramaDeInteraccion2D:
         print("Se intentará obtener las deformaciones iniciales de pretensado.")
         resultado = fsolve(
             self.función_desplazamiento_a_converger,
-            [-self.def_de_pretensado_inicial, 0, 0],
+            [-BarraAceroPretensado.deformacion_de_pretensado_inicial, 0, 0],
             maxfev=100,
             full_output=1)
         if not (resultado[2]):
@@ -147,11 +179,13 @@ class ObtenerDiagramaDeInteraccion2D:
         return min(def_max_acero_pasivo, def_max_acero_activo)
 
     def obtener_def_de_rotura_a_pasivo(self):
-        value = self.armaduras_pasivas_wb.get_value("B", 6)  # TODO mejorar
+        tipo = self.ingreso_datos_wb.get_value("C", "6")
+        posibles_opciones = {"ADN 420": "B", "ADN 500": "C", "AL 220": "D", "Provisto por Usuario": "E"}
+        value = self.armaduras_pasivas_wb.get_value(posibles_opciones.get(tipo, "B"), 5)
         return value
 
     def obtener_def_de_pretensado_inicial(self):
-        value = self.ingreso_datos_wb.get_value("E", 8)  # TODO mejorar
+        value = self.ingreso_datos_wb.get_value("E", 8)
         return value / 1000
 
     def construir_grafica_seccion(self):
@@ -163,8 +197,9 @@ class ObtenerDiagramaDeInteraccion2D:
         self.seccion_H.mostrar_contornos_2d(ax)
         self.seccion_H.mostrar_discretizacion_2d(ax)
         self.mostrar_plano_de_carga_y_ejes(ax)
-        plt.title(f"Discretización: {self.nivel_disc}\n{' '.join([f'{k}={v}' for k,v in self.discretizacion.items() if v])}",
-                  fontsize=11, horizontalalignment='center', fontweight='bold')
+        plt.title(
+            f"Discretización: {self.nivel_disc}\n{' '.join([f'{k}={v}' for k, v in self.obtener_discretizacion().items() if v])}",
+            fontsize=11, horizontalalignment='center', fontweight='bold')
         plt.axis('equal')
         ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=10, fontweight='bold')
         ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=10, fontweight='bold')
@@ -178,45 +213,12 @@ class ObtenerDiagramaDeInteraccion2D:
                                                      export_options={"dpi": 300,
                                                                      "bbox_inches": 'tight'})
 
-    def construir_grafica_seccion_plotly(self, fig=None):
-        """Muestra la sección obtenida luego del proceso de discretización."""
-        if not fig:
-            fig = go.Figure(layout_template="plotly_dark")
-        fig.update_yaxes(
-            scaleanchor="x",
-            scaleratio=1,
-        )
-
-        plotly_util = PlotlyUtil(fig)
-        plotly_util.cargar_barras_como_circulos_para_mostrar_plotly(self.EA, self.EAP)
-
-        self.seccion_H.plotly(fig)
-
-        fig.update_layout(
-
-            title=dict(
-                text=f'<b>SECCIÓN Y DISCRETIZACIÓN<br></b>',
-                x=0.5,
-                font=dict(size=25, color="rgb(142, 180, 227)",
-                          family='Times New Roman')),
-            scene=dict(
-                xaxis_title='X [cm]',
-                yaxis_title='Y [cm]',
-                xaxis=dict(
-                    title_font=dict(family='Times New Roman'),
-                    range=(self.seccion_H.x_min, self.seccion_H.x_max)
-
-                ),
-                yaxis=dict(
-                    title_font=dict(family='Times New Roman'),
-                    range=(self.seccion_H.y_min, self.seccion_H.y_max)
-
-                )),
-            # aspectmode='manual',  # Set aspect ratio manually
-            # aspectratio=dict(x=1, y=1)
-            )
-        # fig.show()
-        return fig
+    def obtener_discretizacion(self):
+        return {
+            "ΔX": f"{round(self.seccion_H.dx, 2)} cm" if self.seccion_H.dx else None,
+            "ΔY": f"{round(self.seccion_H.dy, 2)} cm" if self.seccion_H.dy else None,
+            "Δr": f"{round(self.seccion_H.dr, 2)} cm" if self.seccion_H.dr else None,
+            "Δθ": f"{round(self.seccion_H.d_ang, 2)}°" if self.seccion_H.d_ang else None}
 
     def mostrar_seccion(self, usar_plotly=True, **kwargs):
         if usar_plotly is False:
@@ -236,8 +238,8 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def mostrar_plano_de_carga_y_ejes(self, ax):
         axis_color = "blue"
-        y1, y2 = self.min_y_seccion-self.YG, self.max_y_seccion - self.YG
-        x1, x2 = self.min_x_seccion-self.XG, self.max_x_seccion-self.XG
+        y1, y2 = self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
+        x1, x2 = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG
         ecuacion_plano_carga = lambda x: math.tan(math.radians(
             90 - self.angulo_plano_de_carga_esperado)) * x if self.angulo_plano_de_carga_esperado != 0 else y1 if x < 0 else y2
         linea_plano_de_carga = Segmento(Nodo(x1, ecuacion_plano_carga(x1)),
@@ -245,21 +247,21 @@ class ObtenerDiagramaDeInteraccion2D:
                                             x2))) if self.angulo_plano_de_carga_esperado != 0 else Segmento(
             Nodo(0, ecuacion_plano_carga(x1)), Nodo(0, ecuacion_plano_carga(x2)))
         linea_plano_de_carga.plot(linewidth=3, c="k", linestyle="dashed")
-        arrow_size = ((x2-x1)/100+(y2-y1)/100)/4
-        plt.arrow(x1, 0, x2-x1+arrow_size*7, 0, width=arrow_size, color=axis_color, alpha=1)
+        arrow_size = ((x2 - x1) / 100 + (y2 - y1) / 100) / 4
+        plt.arrow(x1, 0, x2 - x1 + arrow_size * 7, 0, width=arrow_size, color=axis_color, alpha=1)
         plt.text(
             -arrow_size * 15 * math.cos(math.radians(self.angulo_plano_de_carga_esperado)),
             arrow_size * 15 * math.sin(math.radians(self.angulo_plano_de_carga_esperado)),
-                 f"Plano de carga λ={self.angulo_plano_de_carga_esperado}°",
-                 rotation=90 - self.angulo_plano_de_carga_esperado, fontsize=10)
-        plt.arrow(0, y1, 0, y2-y1+arrow_size*7, width=arrow_size, color=axis_color, alpha=1)
-        plt.text(x2+(x2-x1)/20,
-                 (y2-y1)/50,
+            f"Plano de carga λ={self.angulo_plano_de_carga_esperado}°",
+            rotation=90 - self.angulo_plano_de_carga_esperado, fontsize=10)
+        plt.arrow(0, y1, 0, y2 - y1 + arrow_size * 7, width=arrow_size, color=axis_color, alpha=1)
+        plt.text(x2 + (x2 - x1) / 20,
+                 (y2 - y1) / 50,
                  f"X",
                  fontsize=12,
                  c=axis_color)
         plt.text(0 + (x2 - x1) / 20,
-                 y2+(y2 - y1) / 50,
+                 y2 + (y2 - y1) / 50,
                  f"Y",
                  fontsize=12,
                  c=axis_color)
@@ -287,58 +289,10 @@ class ObtenerDiagramaDeInteraccion2D:
         labels[3] = "H/2"
         labels[1] = "-H/2"
         ax.set_yticklabels(labels)
-        plt.xticks([3, -self.deformacion_maxima_de_acero*1000], ["Aplastamiento H° 3‰", "Rotura acero pasivo/activo"], rotation='vertical')
+        plt.xticks([3, -self.deformacion_maxima_de_acero * 1000], ["Aplastamiento H° 3‰", "Rotura acero pasivo/activo"],
+                   rotation='vertical')
         # ax.set_facecolor((0, 0, 0))
         self.diagrama_interaccion_wb.add_plot(fig, "L24", name="planos")
-
-    def mostrar_resultado(self, blanco_y_negro=False):
-        fig = self.construir_grafica_resultado(arcoiris=True, blanco_y_negro=blanco_y_negro)
-        self.diagrama_interaccion_wb.add_plot(fig, name="di", location="L30")
-        plt.show()
-
-    def guardar_resultado(self, blanco_y_negro=False):
-        print("Construyendo Gráfica de resultado")
-        path = f"Resultados/{self.file_name}"
-        if not os.path.exists(path):
-            os.makedirs(path)
-        self.construir_grafica_resultado(blanco_y_negro)
-        print(f"Guardando Diagrama de Interacción en {path}/Diagrama de Interacción")
-        plt.savefig(f"{path}/Diagrama de Interacción.png")
-
-    def construir_grafica_resultado(self, arcoiris=True, blanco_y_negro=False):
-        plt.rcParams["font.family"] = "Times New Roman"
-        X = []
-        Y = []
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1)
-        plt.title(f"DIAGRAMA DE INTERACCIÓN\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
-                  fontsize=12, fontweight='bold')
-        plt.xticks(ha='right', fontsize=10)
-        ax.tick_params(axis='both', which='major', labelsize=10)
-        ax.set_xlabel("M[kNm]", loc="right", fontsize=10, fontweight='bold')
-        ax.set_ylabel("N[kN]", loc="top", rotation=0, rotation_mode="anchor", fontsize=10,
-                      fontweight='bold')
-        self.preparar_eje_pyplot(ax)
-
-        for resultado in self.lista_resultados:
-            sumF = resultado["sumF"]
-            M = resultado["M"]
-            plano_def = resultado["plano_deformacion"]
-
-            x = M / 100  # Pasaje de kNcm a kNm
-            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
-            X.append(x)
-            Y.append(y)
-            color_kwargs = self.obtener_color_kwargs(plano_def,
-                                                     arcoiris=arcoiris,
-                                                     blanco_y_negro=blanco_y_negro)
-            plt.scatter(x, y,
-                        marker=".",
-                        s=100,
-                        **color_kwargs
-                        )
-
-        return fig
 
     def obtener_color_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -346,29 +300,46 @@ class ObtenerDiagramaDeInteraccion2D:
             return {"color": self.numero_a_color_arcoiris(abs(plano_de_def[3]))}
         return {"c": lista_colores[abs(plano_de_def[2])] if blanco_y_negro is False else "k"}
 
-    @staticmethod
-    def preparar_eje_pyplot(ax):
-        # Mueve al centro del diagrama al eje X e Y (por defecto, se sitúan en el extremo inferior izquierdo).
-        ax.yaxis.tick_right()
-
-        ax.spines['left'].set_position('zero')
-        ax.spines['bottom'].set_position('zero')
-
-        # Elimina los viejos ejes
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
-
-        # Agrega los 'tics' (marcas en el eje) en los trozos de ejes agregados
-        ax.xaxis.set_ticks_position('bottom')
-        ax.yaxis.set_ticks_position('left')
-
-        # Agregamos las grilla de referencia
-        ax.grid(which='major', color='#DDDDDD', linewidth=0.8)
-        ax.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.6)
-        ax.minorticks_on()
-
-        # Desplazamos los valores de y a la izquierda
-        return ax
+    def obtener_planos_de_deformacion(self):
+        """Obtiene una lista de los planos de deformación últimos a utilizarse para determinar los estados de resistencia
+        últimos, cada elemento de esta lista representa, en principio, un punto sobre el diagrama de interacción.
+        Este puede no ser el caso si hay puntos para los cuales no se encuentra una convergencia, en ese caso será
+        descartado."""
+        lista_de_planos = []
+        try:
+            for j in range(350):
+                if j <= 25:
+                    def_final = -0.5
+                    def_superior = -3
+                    def_inferior = -3 + (def_final + 3) * j / (25)  # Hasta -0.3
+                    tipo = 1
+                elif 25 < j <= 100:
+                    def_inicial = -0.5
+                    def_final = 0
+                    def_superior = -3
+                    def_inferior = def_inicial + (def_final - def_inicial) * (j - 25) / (100 - 25)  # Hasta 0
+                    tipo = 2
+                elif 100 < j <= 200:
+                    def_superior = -3
+                    def_inferior = 10 * (j - 100) / (200 - 100)
+                    tipo = 3
+                elif 200 < j <= 275:  # Hasta la deformación máxima del acero.
+                    def_superior = -3
+                    def_inferior = 10 + (j - 200) * (self.deformacion_maxima_de_acero * 1000 - 10) / (275 - 200)
+                    tipo = 4
+                elif j <= 325:
+                    def_superior = -3 + (6 + 3) * (j - 275) / (325 - 275)
+                    def_inferior = self.deformacion_maxima_de_acero * 1000
+                    tipo = 5
+                else:
+                    def_superior = 6 + (self.deformacion_maxima_de_acero * 1000 - 6) * (j - 325) / (350 - 326)
+                    def_inferior = self.deformacion_maxima_de_acero * 1000
+                    tipo = 6
+                lista_de_planos.append((def_superior / 1000, def_inferior / 1000, tipo, j))
+        except AttributeError as e:
+            pass
+        lista_invertida = [(x[1], x[0], -x[2], -x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
+        return lista_de_planos + lista_invertida
 
     def asignar_deformacion_hormigon_a_elementos_pretensados(self):
         ec_plano = self.ec_plano_deformacion_elastica_inicial
@@ -376,10 +347,318 @@ class ObtenerDiagramaDeInteraccion2D:
             elemento_pretensado.def_elastica_hormigon_perdidas = ec_plano(elemento_pretensado.xg,
                                                                           elemento_pretensado.yg)
 
+    def obtener_matriz_acero_pasivo(self):
+        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
+            ("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"),
+            columns_range=["A"])
+        resultado = MatrizAceroPasivo()
+        for fila in lista_filas[5:-1]:  # TODO mejorar
+            x, y, d = self.obtener_valores_acero_tabla(fila)
+            if d == 0:
+                continue
+            xg = round(x - self.XG, 3)
+            yg = round(y - self.YG, 3)
+            resultado.append(BarraAceroPasivo(xg, yg, d))
+        return resultado
+
+    def verificar_tolerancia(self, valor):
+        tolerancia = 0.00000000000004
+        return 0 if abs(valor) <= tolerancia else valor
+
+    def obtener_valores_acero_tabla(self, fila):
+        return self.ingreso_datos_wb.get_value("C", fila), self.ingreso_datos_wb.get_value("E",
+                                                                                           fila), self.ingreso_datos_wb.get_value(
+            "G", fila)
+
+    def setear_propiedades_acero_pasivo(self, def_de_rotura_a_pasivo):
+        try:
+            tipo = self.ingreso_datos_wb.get_value("C", "6")
+            if tipo == "Provisto por usuario":
+                valores = {
+                    "tipo": "Provisto por usuario",
+                    "fy": self.armaduras_pasivas_wb.get_value("E", "3"),
+                    "E": self.armaduras_pasivas_wb.get_value("E", "4"),
+                    "eu": self.armaduras_pasivas_wb.get_value("E", "5")
+                }
+
+                if not all(bool(v) for k, v in valores.items()):
+                    raise Exception("Usted ha seleccionado Acero Pasivo tipo 'Provisto por usuario'\n"
+                                    "Pero no ha ingresado todos los parámetros necesarios. Por favor,"
+                                    " diríjase a pestaña 'Armaduras Pasivas' e intentelo de nuevo.")
+
+                for k, v in valores.items():
+                    if k in ("fy", "E"):
+                        v = v / 10  # kN/cm²
+                    setattr(BarraAceroPasivo, k, v)
+
+            else:
+                values = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo)
+                for k, v in values.items():
+                    self.__setattr__(k, v)
+                fy = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo.upper())["fy"]
+                BarraAceroPasivo.E = 200000
+                BarraAceroPasivo.tipo = tipo
+                BarraAceroPasivo.fy = fy
+                BarraAceroPasivo.eu = def_de_rotura_a_pasivo
+        except Exception:
+            raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
+
+    def obtener_matriz_acero_pretensado(self):
+        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
+            ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"),
+            columns_range=["A"])
+        resultado = MatrizAceroActivo()
+        for fila in lista_filas[5:-1]:  # TODO mejorar
+            x, y, area = self.obtener_valores_acero_tabla(fila)
+            if area == 0:
+                continue
+            xg = round(x - self.XG, 3)
+            yg = round(y - self.YG, 3)
+            resultado.append(BarraAceroPretensado(xg, yg, area))
+        return resultado
+
+    def setear_propiedades_acero_activo(self, def_de_pretensado_inicial):
+        try:
+            tipo = self.ingreso_datos_wb.get_value("C", "8")
+            tipo = tipo.upper()
+            if tipo == "Provisto por usuario".upper():
+                valores = {
+                    "tipo": "PROVISTO POR USUARIO",
+                    "Eps": self.armaduras_activas_wb.get_value("E", "3"),
+                    "fpy": self.armaduras_activas_wb.get_value("E", "4"),
+                    "fpu": self.armaduras_activas_wb.get_value("E", "5"),
+                    "epu": self.armaduras_activas_wb.get_value("E", "6"),
+                    "N": self.armaduras_activas_wb.get_value("E", "7"),
+                    "K": self.armaduras_activas_wb.get_value("E", "8"),
+                    "Q": self.armaduras_activas_wb.get_value("E", "9")}
+
+                if not all(bool(v) for k, v in valores.items()):
+                    raise Exception("Usted ha seleccionado Acero Pasivo tipo 'Provisto por usuario'\n"
+                                    "Pero no ha ingresado todos los parámetros necesarios. Por favor,"
+                                    " diríjase a pestaña 'Armaduras Pasivas' e intentelo de nuevo.")
+
+                for k, v in valores.items():
+                    if k in ["fpy", "fpu", "Eps"]:
+                        v = v / 10  # kN/cm²
+                    setattr(BarraAceroPretensado, k, v)
+
+            else:
+                values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo)
+                for k, v in values.items():
+                    setattr(BarraAceroPretensado, k, v)
+                BarraAceroPretensado.tipo = tipo
+                BarraAceroPretensado.Eps = 20000  # kN/cm²
+                BarraAceroPretensado.deformacion_de_pretensado_inicial = def_de_pretensado_inicial
+        except Exception as e:
+            raise Exception("No se pudieron setear las propiedades del acero activo, revise configuración")
+
+    def obtener_indice(self, contorno):
+        value = self.ingreso_datos_wb.get_value("A", contorno[0])
+        return value.split()[-1]
+
+    def obtener_signo(self, contorno):
+        value = self.ingreso_datos_wb.get_value("C", contorno[0])
+        return +1 if "Pos" in value else -1
+
+    def obtener_tipo(self, contorno):
+        value = self.ingreso_datos_wb.get_value("E", contorno[0])
+        return value
+
+    def get_cantidad_de_nodos(self, contorno):  # TODO mejorar
+        return self.ingreso_datos_wb.get_value("G", contorno[0])
+
+    def obtener_matriz_hormigon(self):
+        filas_hormigon = self.ingreso_datos_wb.get_rows_range_between_values(
+            ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"),
+            columns_range=["A"])
+        lista_filas_contornos = self.ingreso_datos_wb.subdivide_range_in_contain_word("A", filas_hormigon, "Contorno")
+        contornos = {}
+        coordenadas_nodos = []
+        max_x, min_x = [], []
+        max_y, min_y = [], []
+        delta_x = []
+        delta_y = []
+        for i, filas_contorno in enumerate(lista_filas_contornos):
+            signo = self.obtener_signo(filas_contorno)
+            tipo = self.obtener_tipo(filas_contorno)
+            indice = self.obtener_indice(filas_contorno)
+            if tipo == "Poligonal":
+                cantidad_de_nodos = int(self.get_cantidad_de_nodos(filas_contorno))
+                for fila_n in self.ingreso_datos_wb.get_n_rows_after_value("Nodo Nº", cantidad_de_nodos + 1,
+                                                                           rows_range=filas_contorno)[1:]:
+                    x = self.ingreso_datos_wb.get_value("C", fila_n)
+                    y = self.ingreso_datos_wb.get_value("E", fila_n)
+                    coordenadas_nodos.append(Nodo(round(x, 3), round(y, 3)))  # Medidas en centímetros
+                contorno = Contorno(coordenadas_nodos, signo, indice, ordenar=True)
+                if signo > 0:  # Solo se utilizan los contornos positivos para definir la discretización
+                    max_x.append(max(contorno.x))
+                    min_x.append(min(contorno.x))
+                    max_y.append(max(contorno.y))
+                    min_y.append(min(contorno.y))
+                    delta_x.append(abs(max(contorno.x) - min(contorno.x)))
+                    delta_y.append(abs(max(contorno.y) - min(contorno.y)))
+                contornos[str(i + 1)] = contorno
+                coordenadas_nodos = []
+            elif tipo == "Circular":
+                x = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 2)
+                y = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 4)
+                r_int = self.ingreso_datos_wb.get_value_on_the_right("Radio Interno [cm]", filas_contorno, 2)
+                r_ext = self.ingreso_datos_wb.get_value_on_the_right("Radio Externo [cm]", filas_contorno, 2)
+                if signo > 0:
+                    max_x.append(x + r_ext)
+                    min_x.append(x - r_ext)
+                    max_y.append(y + r_ext)
+                    min_y.append(y - r_ext)
+                    delta_x.append(r_ext - r_int)
+                    delta_y.append(r_ext - r_int)
+                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Nodo(x, y), indice=indice, radios=(r_int, r_ext),
+                                                         signo=signo)
+            else:
+                pass
+        self.max_x_seccion = max(max_x)
+        self.min_x_seccion = min(min_x)
+        self.max_y_seccion = max(max_y)
+        self.min_y_seccion = min(min_y)
+        EEH = SeccionArbitraria(contornos, discretizacion=self.get_discretizacion(delta_x, delta_y, contornos))
+        return EEH
+
+    def get_discretizacion(self, delta_x, delta_y, contornos):
+        hay_contorno_circular = any(isinstance(v, ContornoCircular) for k, v in contornos.items())
+        hay_contorno_rectangular = any(not isinstance(x, ContornoCircular) for x in contornos)
+        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",
+                                                                  number_of_rows_after_value=20, columns_range="A")
+        nivel_discretizacion = self.ingreso_datos_wb.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
+        self.nivel_disc = nivel_discretizacion
+        if nivel_discretizacion == "Avanzada (Ingreso Manual)":
+            dx = self.ingreso_datos_wb.get_value_on_the_right("ΔX [cm] =", rows_range, 2)
+            dy = self.ingreso_datos_wb.get_value_on_the_right("ΔY [cm] =", rows_range, 2)
+            d_ang = self.ingreso_datos_wb.get_value_on_the_right("Δθ [°] =", rows_range, 2)
+            return (dx if hay_contorno_rectangular else None,
+                    dy if hay_contorno_rectangular else None,
+                    min(dx, dy) if hay_contorno_circular else None,
+                    d_ang if hay_contorno_circular else None)
+        factor_rectangular = 1 / self.niveles_mallado_rectangular.get(nivel_discretizacion)
+        factor_circular = self.niveles_mallado_circular.get(nivel_discretizacion)
+
+        return (factor_rectangular * max(delta_x) if hay_contorno_rectangular else None,
+                factor_rectangular * max(delta_y) if hay_contorno_rectangular else None,
+                factor_circular[0] if hay_contorno_circular else None,
+                factor_circular[1] if hay_contorno_circular else None)
+
+    def calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(self, ec, phix, phiy):
+        ecuacion_plano_deformacion = lambda x, y: ec + math.tan(math.radians(phix)) * (y) + math.tan(
+            math.radians(phiy)) * (x)
+        sumFA = sumFP = sumFH = 0
+        MxA = MxAP = MxH = 0
+        MyA = MyAP = MyH = 0
+        for barra in self.EA:
+            def_elemento, area = ecuacion_plano_deformacion(barra.xg, barra.yg), barra.area
+            FA = barra.relacion_constitutiva(def_elemento) * area
+            sumFA = sumFA + FA
+            MxA = FA * barra.yg + MxA
+            MyA = -FA * barra.xg + MyA
+        for barra_p in self.EAP:
+            deformacion_elastica_hormingon, area = ecuacion_plano_deformacion(barra_p.xg, barra_p.yg), barra_p.area
+            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
+            deformacion_total = deformacion_elastica_hormingon + deformacion_pretensado_inicial
+
+            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
+            sumFP = sumFP + Fp
+            MxAP = Fp * barra_p.yg + MxAP
+            MyAP = -Fp * barra_p.xg + MyAP
+
+        for elemento in self.EEH:
+            def_elemento, area = ecuacion_plano_deformacion(elemento.xg, elemento.yg), elemento.area
+            F_hor = self.hormigon.relacion_constitutiva_elastica(def_elemento) * area
+            sumFH = sumFH + F_hor
+            MxH = F_hor * elemento.yg + MxH
+            MyH = -F_hor * elemento.xg + MyH
+
+        sumF = sumFA + sumFP + sumFH
+        Mx = round(MxA + MxAP + MxH, 8)
+        My = round(MyA + MyAP + MyH, 8)
+
+        return [sumF, Mx, My]
+
+    def print_result_tridimensional(self, ec, phix, phiy):
+        ec_plano = lambda x, y: ec + math.tan(math.radians(phix)) * y + math.tan(math.radians(phiy)) * x
+        self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
+
+    def construir_grafica_seccion_plotly(self, fig=None):
+        """Muestra la sección obtenida luego del proceso de discretización."""
+
+        x_range = self.seccion_H.x_max - self.seccion_H.x_min
+        y_range = self.seccion_H.y_max - self.seccion_H.y_min
+        common_range = max(x_range, y_range)
+
+        # Center the common range around the midpoints of the original ranges
+        x_mid = (self.seccion_H.x_max + self.seccion_H.x_min) / 2
+        y_mid = (self.seccion_H.y_max + self.seccion_H.y_min) / 2
+
+        if not fig:
+            fig = go.Figure(layout_template="plotly_dark")
+        fig.update_yaxes(
+            scaleanchor="x",
+            scaleratio=1,
+        )
+
+        plotly_util = PlotlyUtil(fig)
+        plotly_util.cargar_barras_como_circulos_para_mostrar_plotly(self.EA, self.EAP)
+
+        self.seccion_H.plotly(fig, self.lista_ang_plano_de_carga)
+
+        fig.update_layout(
+
+            title=dict(
+                text=f'<b>SECCIÓN Y DISCRETIZACIÓN<br></b>',
+                x=0.5,
+                font=dict(size=25, color="rgb(142, 180, 227)",
+                          family='Times New Roman')),
+            scene=dict(
+                xaxis_title='X [cm]',
+                yaxis_title='Y [cm]',
+                xaxis=dict(
+                    title_font=dict(family='Times New Roman'),
+                    range=[x_mid - common_range / 2, x_mid + common_range / 2]
+
+                ),
+                yaxis=dict(
+                    title_font=dict(family='Times New Roman'),
+                    range=[y_mid - common_range / 2, y_mid + common_range / 2]
+
+                ))
+        )
+        return fig
+
+
+class DiagramaInteraccion2D:
+    def __init__(self, angulo_plano_de_carga, solucion_geometrica: ResolucionGeometrica):
+        self.geometria = solucion_geometrica
+        self.medir_diferencias = []
+        self.angulo_plano_de_carga_esperado = angulo_plano_de_carga
+        try:
+
+            self.lista_planos_sin_solucion = []
+            self.lista_resultados = self.iterar()
+            normal_momento_phi = [[-x["sumF"], x["M"] / 100, x["phi"]] for x in self.lista_resultados]
+            # self.diagrama_interaccion_wb.insert_values_vertically("I3", normal_momento_phi)
+            # if len(self.lista_resultados) == 0:
+            #     show_message("No se obtuvieron resultados, por favor revisar planilla de ingreso de datos por errores o "
+            #           "seleccionar 'VOLVER A VALORES POR DEFECTO'")
+            # else:
+            #     show_message(f"Se obtuvieron {len(self.lista_resultados)}/{len(self.lista_planos_sin_solucion) + len(self.lista_resultados)} puntos con solución\n"
+            #                  f"Por favor, diríjase a la pestaña 'Diagrama de Interacción 2D' para ver los resultados", "RESULTADOS ACSAHE")
+        except Exception as e:
+            traceback.print_exc()
+            show_message(e)
+            raise e
+        finally:
+            logging.log(1, "Se terminó la ejecución")
+
     def iterar(self):
         lista_de_puntos = []
         try:
-            for plano_de_deformacion in self.planos_de_deformacion:
+            for plano_de_deformacion in self.geometria.planos_de_deformacion:
                 sol = fsolve(self.evaluar_diferencia_para_inc_eje_neutro,
                              x0=-self.angulo_plano_de_carga_esperado,
                              xtol=0.005,
@@ -443,7 +722,7 @@ class ObtenerDiagramaDeInteraccion2D:
         angulo_x = math.degrees(math.atan2(My, Mx))
         if angulo_x == 180:
             return 0
-        return angulo_x if angulo_x >= 0 else angulo_x+180  # Para que se encuentre comprendido en el rango [0, 180]
+        return angulo_x if angulo_x >= 0 else angulo_x + 180  # Para que se encuentre comprendido en el rango [0, 180]
 
     def obtener_ecuacion_plano_deformacion(self, EEH_girado, EA_girado, EAP_girado, plano_de_deformacion):
         """Construye la ecuación de una recta que pasa por los puntos (y_positivo,def_1) (y_negativo,def_2).
@@ -459,7 +738,7 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def obtener_y_determinante_positivo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
         """Lo positivo indica que se encuentra con coordendas y_girado positivas (de un lado del eje neutro)"""
-        if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:  # Compresión
+        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:  # Compresión
             return EEH_girado[-1].y_girado  # Fibra de Hormigón más alejada
         lista_de_armaduras = []
         lista_de_armaduras.extend(EA_girado)
@@ -468,7 +747,7 @@ class ObtenerDiagramaDeInteraccion2D:
 
     def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
         """Lo negativo indica que se encuentra con coordenadas y_girado negativas (de un lado del eje neutro)"""
-        if def_extrema <= 0 or def_extrema < self.deformacion_maxima_de_acero:
+        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:
             return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
 
         lista_de_armaduras = []
@@ -477,7 +756,7 @@ class ObtenerDiagramaDeInteraccion2D:
         return min(x.y_girado for x in lista_de_armaduras)  # Armadura más traccionada (más alejada del EN)
 
     def calculo_distancia_eje_neutro_de_elementos(self, theta):
-        EEH_girado, EA_girado, EAP_girado = self.EEH.copy(), self.EA.copy(), self.EAP.copy()
+        EEH_girado, EA_girado, EAP_girado = self.geometria.EEH.copy(), self.geometria.EA.copy(), self.geometria.EAP.copy()
         for elemento_hormigon in EEH_girado:
             elemento_hormigon.y_girado = self.distancia_eje_rotado(elemento_hormigon, angulo=theta)
         for elemento_acero in EA_girado:
@@ -492,46 +771,69 @@ class ObtenerDiagramaDeInteraccion2D:
         value = -elemento.xg * math.sin(angulo_rad) + elemento.yg * math.cos(angulo_rad)
         return value
 
-    def obtener_planos_de_deformacion(self):
-        """Obtiene una lista de los planos de deformación últimos a utilizarse para determinar los estados de resistencia
-        últimos, cada elemento de esta lista representa, en principio, un punto sobre el diagrama de interacción.
-        Este puede no ser el caso si hay puntos para los cuales no se encuentra una convergencia, en ese caso será
-        descartado."""
-        lista_de_planos = []
-        try:
-            for j in range(350):
-                if j <= 25:
-                    def_final = -0.5
-                    def_superior = -3
-                    def_inferior = -3 + (def_final + 3) * j / (25)  # Hasta -0.3
-                    tipo = 1
-                elif 25 < j <= 100:
-                    def_inicial = -0.5
-                    def_final = 0
-                    def_superior = -3
-                    def_inferior = def_inicial + (def_final - def_inicial) * (j - 25) / (100 - 25)  # Hasta 0
-                    tipo = 2
-                elif 100 < j <= 200:
-                    def_superior = -3
-                    def_inferior = 10 * (j - 100) / (200 - 100)
-                    tipo = 3
-                elif 200 < j <= 275:  # Hasta la deformación máxima del acero.
-                    def_superior = -3
-                    def_inferior = 10 + (j - 200) * (self.deformacion_maxima_de_acero * 1000 - 10) / (275 - 200)
-                    tipo = 4
-                elif j <= 325:
-                    def_superior = -3 + (6 + 3) * (j - 275) / (325 - 275)
-                    def_inferior = self.deformacion_maxima_de_acero * 1000
-                    tipo = 5
-                else:
-                    def_superior = 6 + (self.deformacion_maxima_de_acero * 1000 - 6) * (j - 325) / (350 - 326)
-                    def_inferior = self.deformacion_maxima_de_acero * 1000
-                    tipo = 6
-                lista_de_planos.append((def_superior / 1000, def_inferior / 1000, tipo, j))
-        except AttributeError as e:
-            pass
-        lista_invertida = [(x[1], x[0], -x[2], -x[3]) for x in lista_de_planos]  # Misma lista, invertida de signo
-        return lista_de_planos + lista_invertida
+    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(self, EEH_girado, EA_girado, EAP_girado,
+                                                                  ecuacion_plano_deformacion):
+
+        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
+        sumFA = sumFP = sumFH = 0
+        MxA = MxAP = MxH = 0
+        MyA = MyAP = MyH = 0
+        e1, e2 = ecuacion_plano_deformacion(y_max), ecuacion_plano_deformacion(y_min)
+
+        def_max_comp = min(e1, e2)
+
+        for barra in EA_girado:
+            dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
+            FA = barra.relacion_constitutiva(def_elemento) * area
+            sumFA = sumFA + FA
+            MxA = FA * barra.yg + MxA
+            MyA = -FA * barra.xg + MyA
+
+        for barra_p in EAP_girado:
+            dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(
+                barra_p.y_girado), barra_p.area
+            deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
+            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
+            deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
+
+            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
+            sumFP = sumFP + Fp
+            MxAP = Fp * barra_p.yg + MxAP
+            MyAP = -Fp * barra_p.xg + MyAP
+
+        for elemento in EEH_girado:
+            def_elemento, area = ecuacion_plano_deformacion(elemento.y_girado), elemento.area
+            F_hor = self.geometria.hormigon.relacion_constitutiva_simplificada(
+                def_elemento, e_max_comp=def_max_comp) * area
+            sumFH = sumFH + F_hor
+            MxH = F_hor * elemento.yg + MxH
+            MyH = -F_hor * elemento.xg + MyH
+
+        factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(
+            EA_girado, EAP_girado, ecuacion_plano_deformacion, self.geometria.tipo_estribo)
+
+        sumF = sumFA + sumFP + sumFH
+        Mx = round(MxA + MxAP + MxH, 8)
+        My = round(MyA + MyAP + MyH, 8)
+
+        sumF = factor_minoracion_de_resistencia * sumF
+        Mx = factor_minoracion_de_resistencia * Mx
+        My = factor_minoracion_de_resistencia * My
+        return sumF, Mx, My, factor_minoracion_de_resistencia
+
+    def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
+        phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
+        if len(EA_girado) == 0 and len(EAP_girado) == 0:  # Hormigón Simple
+            return 0.55
+        lista_def_girado = [ecuacion_plano_de_def(barra.y_girado) for barra in EA_girado + EAP_girado]
+        y_girado_max = max(lista_def_girado)
+        if y_girado_max >= 5 / 1000:
+            return 0.9
+        elif y_girado_max < 2 / 1000:
+            return phi_min
+        else:
+            return phi_min * (0.005 - y_girado_max) / 0.003 + 0.9 * (
+                    y_girado_max - 0.002) / 0.003  # Interpolación lineal
 
     @staticmethod
     def numero_a_color_arcoiris(numero):
@@ -563,277 +865,92 @@ class ObtenerDiagramaDeInteraccion2D:
 
         return [rojo, verde, azul]
 
-    def obtener_matriz_acero_pasivo(self):
-        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"),
-            columns_range=["A"])
-        resultado = MatrizAceroPasivo()
-        for fila in lista_filas[5:-1]:  # TODO mejorar
-            x, y, d = self.obtener_valores_acero_tabla(fila)
-            if d == 0:
-                continue
-            xg = round(x - self.XG, 3)
-            yg = round(y - self.YG, 3)
-            resultado.append(BarraAceroPasivo(xg, yg, d))
-        return resultado
+    def construir_grafica_resultado(self, arcoiris=True, blanco_y_negro=False):
+        plt.rcParams["font.family"] = "Times New Roman"
+        X = []
+        Y = []
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        plt.title(f"DIAGRAMA DE INTERACCIÓN\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
+                  fontsize=12, fontweight='bold')
+        plt.xticks(ha='right', fontsize=10)
+        ax.tick_params(axis='both', which='major', labelsize=10)
+        ax.set_xlabel("M[kNm]", loc="right", fontsize=10, fontweight='bold')
+        ax.set_ylabel("N[kN]", loc="top", rotation=0, rotation_mode="anchor", fontsize=10,
+                      fontweight='bold')
+        self.preparar_eje_pyplot(ax)
 
-    def verificar_tolerancia(self, valor):
-        tolerancia = 0.00000000000004
-        return 0 if abs(valor) <= tolerancia else valor
+        for resultado in self.lista_resultados:
+            sumF = resultado["sumF"]
+            M = resultado["M"]
+            plano_def = resultado["plano_deformacion"]
 
-    def obtener_valores_acero_tabla(self, fila):
-        return self.ingreso_datos_wb.get_value("C", fila), self.ingreso_datos_wb.get_value("E", fila), self.ingreso_datos_wb.get_value("G", fila)
+            x = M / 100  # Pasaje de kNcm a kNm
+            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+            X.append(x)
+            Y.append(y)
+            color_kwargs = self.geometria.obtener_color_kwargs(plano_def,
+                                                               arcoiris=arcoiris,
+                                                               blanco_y_negro=blanco_y_negro)
+            plt.scatter(x, y,
+                        marker=".",
+                        s=100,
+                        **color_kwargs)
+        return fig
 
-    def setear_propiedades_acero_pasivo(self):
-        try:
-            tipo = self.ingreso_datos_wb.get_value("C", "6")
-            values = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo)
-            for k, v in values.items():
-                self.__setattr__(k, v)
-            fy = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo.upper())["fy"]
-            BarraAceroPasivo.E = 200000
-            BarraAceroPasivo.tipo = tipo
-            BarraAceroPasivo.fy = fy
-            BarraAceroPasivo.eu = self.def_de_rotura_a_pasivo
-        except Exception:
-            raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
+    def mostrar_resultado(self, blanco_y_negro=False):
+        fig = self.construir_grafica_resultado(arcoiris=True, blanco_y_negro=blanco_y_negro)
+        self.geometria.diagrama_interaccion_wb.add_plot(fig, name="di", location="L30")
+        plt.show()
 
-    def obtener_matriz_acero_pretensado(self):
-        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"),
-            columns_range=["A"])
-        resultado = MatrizAceroActivo()
-        for fila in lista_filas[5:-1]:  # TODO mejorar
-            x, y, area = self.obtener_valores_acero_tabla(fila)
-            if area == 0:
-                continue
-            xg = round(x - self.XG, 3)
-            yg = round(y - self.YG, 3)
-            resultado.append(BarraAceroPretensado(xg, yg, area))
-        return resultado
+    @staticmethod
+    def preparar_eje_pyplot(ax):
+        # Mueve al centro del diagrama al eje X e Y (por defecto, se sitúan en el extremo inferior izquierdo).
+        ax.yaxis.tick_right()
 
-    def setear_propiedades_acero_activo(self):
-        try:
-            tipo = self.ingreso_datos_wb.get_value("C", "8")
-            tipo = tipo.upper()
-            values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo)
-            for k, v in values.items():
-                setattr(BarraAceroPretensado, k, v)
-            BarraAceroPretensado.tipo = tipo
-            BarraAceroPretensado.Eps = 20000  # kN/cm²
-            BarraAceroPretensado.deformacion_de_pretensado_inicial = self.def_de_pretensado_inicial
-        except Exception:
-            raise Exception("No se pudieron setear las propiedades del acero activo, revise configuración")
+        ax.spines['left'].set_position('zero')
+        ax.spines['bottom'].set_position('zero')
 
-    def obtener_indice(self, contorno):
-        value = self.ingreso_datos_wb.get_value("A", contorno[0])
-        return value.split()[-1]
+        # Elimina los viejos ejes
+        ax.spines['right'].set_color('none')
+        ax.spines['top'].set_color('none')
 
-    def obtener_signo(self, contorno):
-        value = self.ingreso_datos_wb.get_value("C", contorno[0])
-        return +1 if "Pos" in value else -1
+        # Agrega los 'tics' (marcas en el eje) en los trozos de ejes agregados
+        ax.xaxis.set_ticks_position('bottom')
+        ax.yaxis.set_ticks_position('left')
 
-    def obtener_tipo(self, contorno):
-        value = self.ingreso_datos_wb.get_value("E", contorno[0])
-        return value
+        # Agregamos las grilla de referencia
+        ax.grid(which='major', color='#DDDDDD', linewidth=0.8)
+        ax.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.6)
+        ax.minorticks_on()
 
-    def get_cantidad_de_nodos(self, contorno):  # TODO mejorar
-        return self.ingreso_datos_wb.get_value("G", contorno[0])
-
-    def obtener_matriz_hormigon(self):
-        filas_hormigon = self.ingreso_datos_wb.get_rows_range_between_values(
-            ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"),
-            columns_range=["A"])
-        lista_filas_contornos = self.ingreso_datos_wb.subdivide_range_in_contain_word("A", filas_hormigon, "Contorno")
-        contornos = {}
-        coordenadas_nodos = []
-        max_x, min_x = [], []
-        max_y, min_y = [], []
-        delta_x = []
-        delta_y = []
-        for i, filas_contorno in enumerate(lista_filas_contornos):
-            signo = self.obtener_signo(filas_contorno)
-            tipo = self.obtener_tipo(filas_contorno)
-            indice = self.obtener_indice(filas_contorno)
-            if tipo == "Poligonal":
-                cantidad_de_nodos = int(self.get_cantidad_de_nodos(filas_contorno))
-                for fila_n in self.ingreso_datos_wb.get_n_rows_after_value("Nodo Nº", cantidad_de_nodos + 1,
-                                                                           rows_range=filas_contorno)[1:]:
-                    x = self.ingreso_datos_wb.get_value("C", fila_n)
-                    y = self.ingreso_datos_wb.get_value("E", fila_n)
-                    coordenadas_nodos.append(Nodo(round(x, 3), round(y, 3)))  # Medidas en centímetros
-                contorno = Contorno(coordenadas_nodos, signo, indice, ordenar=True)
-                if signo > 0:  # Solo se utilizan los contornos positivos para definir la discretización
-                    max_x.append(max(contorno.x))
-                    min_x.append(min(contorno.x))
-                    max_y.append(max(contorno.y))
-                    min_y.append(min(contorno.y))
-                    delta_x.append(abs(max(contorno.x)-min(contorno.x)))
-                    delta_y.append(abs(max(contorno.y)-min(contorno.y)))
-                contornos[str(i + 1)] = contorno
-                coordenadas_nodos = []
-            elif tipo == "Circular":
-                x = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 2)
-                y = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 4)
-                r_int = self.ingreso_datos_wb.get_value_on_the_right("Radio Interno [cm]", filas_contorno, 2)
-                r_ext = self.ingreso_datos_wb.get_value_on_the_right("Radio Externo [cm]", filas_contorno, 2)
-                if signo > 0:
-                    max_x.append(x+r_ext)
-                    min_x.append(x-r_ext)
-                    max_y.append(y+r_ext)
-                    min_y.append(y-r_ext)
-                    delta_x.append(r_ext-r_int)
-                    delta_y.append(r_ext-r_int)
-                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Nodo(x, y), indice=indice, radios=(r_int, r_ext), signo=signo)
-            else:
-                pass
-        self.max_x_seccion = max(max_x)
-        self.min_x_seccion = min(min_x)
-        self.max_y_seccion = max(max_y)
-        self.min_y_seccion = min(min_y)
-        EEH = SeccionArbitraria(contornos, discretizacion=self.get_discretizacion(delta_x, delta_y, contornos))
-        return EEH
-
-    def get_discretizacion(self, delta_x, delta_y, contornos):
-        hay_contorno_circular = any(isinstance(v, ContornoCircular) for k, v in contornos.items())
-        hay_contorno_rectangular = any(not isinstance(x, ContornoCircular) for x in contornos)
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",number_of_rows_after_value=20, columns_range="A")
-        nivel_discretizacion = self.ingreso_datos_wb.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
-        self.nivel_disc = nivel_discretizacion
-        if nivel_discretizacion == "Avanzada (Ingreso Manual)":
-            dx = self.ingreso_datos_wb.get_value_on_the_right("ΔX [cm] =", rows_range, 2)
-            dy = self.ingreso_datos_wb.get_value_on_the_right("ΔY [cm] =", rows_range, 2)
-            d_ang = self.ingreso_datos_wb.get_value_on_the_right("Δθ [°] =", rows_range, 2)
-            return (dx if hay_contorno_rectangular else None,
-                    dy if hay_contorno_rectangular else None,
-                    min(dx, dy) if hay_contorno_circular else None,
-                    d_ang if hay_contorno_circular else None)
-        factor_rectangular = 1/self.niveles_mallado_rectangular.get(nivel_discretizacion)
-        factor_circular = self.niveles_mallado_circular.get(nivel_discretizacion)
-
-        return (factor_rectangular * max(delta_x) if hay_contorno_rectangular else None,
-                factor_rectangular * max(delta_y) if hay_contorno_rectangular else None,
-                factor_circular[0] if hay_contorno_circular else None,
-                factor_circular[1] if hay_contorno_circular else None)
-
-    def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
-        phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
-        if len(EA_girado) == 0 and len(EAP_girado) == 0:  # Hormigón Simple
-            return 0.55
-        lista_def_girado = [ecuacion_plano_de_def(barra.y_girado) for barra in EA_girado + EAP_girado]
-        y_girado_max = max(lista_def_girado)
-        if y_girado_max >= 5 / 1000:
-            return 0.9
-        elif y_girado_max < 2 / 1000:
-            return phi_min
-        else:
-            return phi_min * (0.005 - y_girado_max) / 0.003 + 0.9 * (
-                    y_girado_max - 0.002) / 0.003  # Interpolación lineal
-
-    def calcular_sumatoria_de_fuerzas_en_base_a_plano_baricentrico(self, ec, phix, phiy):
-        ecuacion_plano_deformacion = lambda x, y: ec + math.tan(math.radians(phix)) * (y) + math.tan(
-            math.radians(phiy)) * (x)
-        sumFA = sumFP = sumFH = 0
-        MxA = MxAP = MxH = 0
-        MyA = MyAP = MyH = 0
-        for barra in self.EA:
-            def_elemento, area = ecuacion_plano_deformacion(barra.xg, barra.yg), barra.area
-            FA = barra.relacion_constitutiva(def_elemento) * area
-            sumFA = sumFA + FA
-            MxA = FA * barra.yg + MxA
-            MyA = -FA * barra.xg + MyA
-        for barra_p in self.EAP:
-            deformacion_elastica_hormingon, area = ecuacion_plano_deformacion(barra_p.xg, barra_p.yg), barra_p.area
-            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
-            deformacion_total = deformacion_elastica_hormingon + deformacion_pretensado_inicial
-
-            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
-            sumFP = sumFP + Fp
-            MxAP = Fp * barra_p.yg + MxAP
-            MyAP = -Fp * barra_p.xg + MyAP
-
-        for elemento in self.EEH:
-            def_elemento, area = ecuacion_plano_deformacion(elemento.xg, elemento.yg), elemento.area
-            F_hor = self.hormigon.relacion_constitutiva_elastica(def_elemento) * area
-            sumFH = sumFH + F_hor
-            MxH = F_hor * elemento.yg + MxH
-            MyH = -F_hor * elemento.xg + MyH
-
-        sumF = sumFA + sumFP + sumFH
-        Mx = round(MxA + MxAP + MxH, 8)
-        My = round(MyA + MyAP + MyH, 8)
-
-        return [sumF, Mx, My]
-
-    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
-            self, EEH_girado, EA_girado, EAP_girado, ecuacion_plano_deformacion):
-
-        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
-        sumFA = sumFP = sumFH = 0
-        MxA = MxAP = MxH = 0
-        MyA = MyAP = MyH = 0
-        e1, e2 = ecuacion_plano_deformacion(y_max), ecuacion_plano_deformacion(y_min)
-
-        def_max_comp = min(e1, e2)
-
-        for barra in EA_girado:
-            dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
-            FA = barra.relacion_constitutiva(def_elemento) * area
-            sumFA = sumFA + FA
-            MxA = FA * barra.yg + MxA
-            MyA = -FA * barra.xg + MyA
-
-        for barra_p in EAP_girado:
-            dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(
-                barra_p.y_girado), barra_p.area
-            deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
-            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
-            deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
-
-            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
-            sumFP = sumFP + Fp
-            MxAP = Fp * barra_p.yg + MxAP
-            MyAP = -Fp * barra_p.xg + MyAP
-
-        for elemento in EEH_girado:
-            def_elemento, area = ecuacion_plano_deformacion(elemento.y_girado), elemento.area
-            F_hor = self.hormigon.relacion_constitutiva_simplificada(def_elemento, e_max_comp=def_max_comp) * area
-            sumFH = sumFH + F_hor
-            MxH = F_hor * elemento.yg + MxH
-            MyH = -F_hor * elemento.xg + MyH
-
-        factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(
-            EA_girado, EAP_girado, ecuacion_plano_deformacion, self.tipo_estribo)
-
-        sumF = sumFA + sumFP + sumFH
-        Mx = round(MxA + MxAP + MxH, 8)
-        My = round(MyA + MyAP + MyH, 8)
-
-        sumF = factor_minoracion_de_resistencia * sumF
-        Mx = factor_minoracion_de_resistencia * Mx
-        My = factor_minoracion_de_resistencia * My
-        return sumF, Mx, My, factor_minoracion_de_resistencia
-
-    def print_result_tridimensional(self, ec, phix, phiy):
-        ec_plano = lambda x, y: ec + math.tan(math.radians(phix)) * y + math.tan(math.radians(phiy)) * x
-        self.seccion_H.mostrar_contornos_3d(ecuacion_plano_a_desplazar=ec_plano)
+        # Desplazamos los valores de y a la izquierda
+        return ax
 
 
-class ObtenerDiagramaDeInteraccion3D:
+class ACSAHE():
+    def __init__(self, file_name, path_to_file):
+        solucion_geometrica = ResolucionGeometrica(file_path=f"{path_to_file + '/' if path_to_file else ''}{file_name}")
+        # self.angulo_plano_de_carga_esperado = self.determinar_planos_de_carga(solucion_geometrica.ingreso_datos_wb)
+        lista_angulos_plano_de_cargag_esperados = []
+        # lista_angulos_plano_de_carga_esperado = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90, 45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*15/4, 45*16/4]
+        # lista_angulos_plano_de_carga_esperado = [0]
 
-    def __init__(self, file_path, script_dir="", file_name=None, usar_plotly=False, **kwargs):
-        # self.lista_de_angulos_de_carga = [0, 45*1/4, 45*0.5,45*3/4, 45,45*5/4, 45*1.5, 45*7/4, 90, 45*9/4, 45*2.5, 45*11/4, 135, 45*13/4, 45*14/4, 45*15/4, 45*16/4]
-        self.lista_de_angulos_de_carga = [0, 45, 90, 135]
-        # self.lista_de_angulos_de_carga = [0]
+        # if len(solucion_geometrica.lista_ang_plano_de_carga) > 1:
+        #     ObtenerDiagramaDeInteraccion3D(solucion_geometrica, file_name, path_to_file)
+
+        file_path = path_to_file
+
         lista_x_total, lista_y_total, lista_z_total, lista_color, lista_text_total, lista_color_total = [], [], [], [], [], []
         lista_x_total_sin_phi, lista_y_total_sin_phi, lista_z_total_sin_phi = [], [], []
         data_subsets = {}
-        for angulo_plano_de_carga in self.lista_de_angulos_de_carga:
+        for angulo_plano_de_carga in solucion_geometrica.lista_ang_plano_de_carga:
             # warnings.simplefilter(action='ignore', category=UserWarning)
-            solucion_parcial = ObtenerDiagramaDeInteraccion2D(file_path, angulo_plano_de_carga, mostrar_resultado=True)
-            coordenadas, color, plano_de_def = solucion_parcial.coordenadas_de_puntos_en_3d()
+            solucion_parcial = DiagramaInteraccion2D(angulo_plano_de_carga, solucion_geometrica)
+            coordenadas, color, plano_de_def = self.coordenadas_de_puntos_en_3d(solucion_parcial.lista_resultados)
             lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial = coordenadas
-            texto = self.hover_text(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial, angulo_plano_de_carga)
+            texto = self.hover_text(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
+                                    angulo_plano_de_carga)
             data_subsets[str(angulo_plano_de_carga)] = {
                 "x": lista_x_parcial.copy(),
                 "y": lista_y_parcial.copy(),
@@ -843,16 +960,23 @@ class ObtenerDiagramaDeInteraccion3D:
             lista_x_total.extend(lista_x_parcial)
             lista_y_total.extend(lista_y_parcial)
             lista_z_total.extend(lista_z_parcial)
-            lista_x_total_sin_phi.extend((np.array(lista_x_parcial)/np.array(lista_phi_parcial)).tolist())
-            lista_y_total_sin_phi.extend((np.array(lista_y_parcial)/np.array(lista_phi_parcial)).tolist())
-            lista_z_total_sin_phi.extend((np.array(lista_z_parcial)/np.array(lista_phi_parcial)).tolist())
+            lista_x_total_sin_phi.extend((np.array(lista_x_parcial) / np.array(lista_phi_parcial)).tolist())
+            lista_y_total_sin_phi.extend((np.array(lista_y_parcial) / np.array(lista_phi_parcial)).tolist())
+            lista_z_total_sin_phi.extend((np.array(lista_z_parcial) / np.array(lista_phi_parcial)).tolist())
             lista_text_total.extend(texto)
             lista_color_total.extend(color)
 
-        fig_seccion = solucion_parcial.construir_grafica_seccion_plotly()
+        fig_seccion = solucion_geometrica.construir_grafica_seccion_plotly()
 
         buttons = []
-        for angulo in self.lista_de_angulos_de_carga:
+
+        buttons.append(dict(
+            label="Mostrar Todos",
+            method="update",
+            args=[{"x": [lista_x_total], "y": [lista_y_total], "z": [lista_z_total], "text": [lista_text_total]}],
+            # Reset to original data
+        ))
+        for angulo in solucion_geometrica.lista_ang_plano_de_carga:
             subset = data_subsets[str(angulo)]
             button = dict(
                 label=f"λ={angulo}º",
@@ -860,19 +984,14 @@ class ObtenerDiagramaDeInteraccion3D:
                 args=[{"x": [subset['x']], "y": [subset['y']], "z": [subset['z']], "text": [subset['text']]}],
             )
             buttons.append(button)
-        buttons.append(dict(
-            label="Mostrar Todos",
-            method="update",
-            args=[{"x": [lista_x_total], "y": [lista_y_total], "z": [lista_z_total], "text": [lista_text_total]}],
-            # Reset to original data
-        ))
+
         # buttons.append(dict(
         #     label="Mostrar Todos sin Phi",
         #     method="update",
         #     args=[{"x": [lista_x_total_sin_phi], "y": [lista_y_total_sin_phi], "z": [lista_z_total_sin_phi], "text": [lista_text_total]}],
         #     # Reset to original data
         # ))
-
+        usar_plotly = True
         if usar_plotly is False:
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
@@ -882,24 +1001,24 @@ class ObtenerDiagramaDeInteraccion3D:
             ax.set_zlabel("N [kN]", fontsize=12, fontweight='bold')
 
             ax.scatter(lista_x_total, lista_y_total, lista_z_total, color=lista_color, marker=".", alpha=0.8)
-            plt.suptitle("    DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
+            plt.suptitle("DIAGRAMA DE INTERACCIÓN", fontsize=20, fontweight='bold', horizontalalignment='center')
             # plt.savefig("test.pdf")
             plt.show()
         else:
             fig_1 = go.Scatter3d(
-                    name="Data 1",
-                    x=lista_x_total,
-                    y=lista_y_total,
-                    z=lista_z_total,
-                    mode='markers',
-                    marker=dict(
-                        size=2,  # Adjust marker size as needed
-                        color=lista_color_total,  # Map colors to the Z values
-                        # colorscale='Rainbow',  # Choose a color scale ('Rainbow' in this case)
-                    ),
-                    showlegend=False,
-                    text=lista_text_total,  # Assign custom hover text here
-                    hoverinfo='text',
+                name="Data 1",
+                x=lista_x_total,
+                y=lista_y_total,
+                z=lista_z_total,
+                mode='markers',
+                marker=dict(
+                    size=2,  # Adjust marker size as needed
+                    color=lista_color_total,  # Map colors to the Z values
+                    # colorscale='Rainbow',  # Choose a color scale ('Rainbow' in this case)
+                ),
+                showlegend=False,
+                text=lista_text_total,  # Assign custom hover text here
+                hoverinfo='text',
             )
 
             rango_min = min(min(lista_x_total), min(lista_y_total))
@@ -908,29 +1027,29 @@ class ObtenerDiagramaDeInteraccion3D:
             fig = go.Figure(data=fig_1, layout_template="plotly_dark")
 
             fig.update_layout(
-                           title=dict(
-                               text=f"<b>ACSAHE V.1.0.0<br>Archivo: {file_name}</b>",
-                               x=0.5,
-                               font=dict(size=25, color="rgb(142, 180, 227)",
-                                         family='Times New Roman')),
-                           scene=dict(
-                               xaxis_title='My [kNm]',
-                               yaxis_title='Mx [kNm]',
-                               zaxis_title='N [kN]',
-                               xaxis=dict(
-                                   title_font=dict(family='Times New Roman', size=12),
-                                   range=[rango_min, rango_max]
-                               ),
-                               yaxis=dict(
-                                   title_font=dict(family='Times New Roman', size=12),
-                                   range=[rango_min, rango_max]
-                               ),
-                               zaxis=dict(
-                                   title_font=dict(family='Times New Roman', size=12),
-                                   range=[min(lista_z_total), max(lista_z_total)]),
-                               aspectmode='manual',  # Set aspect ratio manually
-                               aspectratio=dict(x=1, y=1, z=1),
-                           ))
+                title=dict(
+                    text=f"<b>ACSAHE V.1.0.0<br>Archivo: {file_name}</b>",
+                    x=0.5,
+                    font=dict(size=25, color="rgb(142, 180, 227)",
+                              family='Times New Roman')),
+                scene=dict(
+                    xaxis_title='My [kNm]',
+                    yaxis_title='Mx [kNm]',
+                    zaxis_title='N [kN]',
+                    xaxis=dict(
+                        title_font=dict(family='Times New Roman', size=12),
+                        range=[rango_min, rango_max]
+                    ),
+                    yaxis=dict(
+                        title_font=dict(family='Times New Roman', size=12),
+                        range=[rango_min, rango_max]
+                    ),
+                    zaxis=dict(
+                        title_font=dict(family='Times New Roman', size=12),
+                        range=[min(lista_z_total), max(lista_z_total)]),
+                    aspectmode='manual',  # Set aspect ratio manually
+                    aspectratio=dict(x=1, y=1, z=1),
+                ))
 
             fig.update_layout(
                 updatemenus=[dict(
@@ -942,15 +1061,17 @@ class ObtenerDiagramaDeInteraccion3D:
                 )]
             )
 
-            with open(f"{script_dir + '/' if script_dir else ''}acsahe.html", "r", encoding="UTF-8") as r,\
-                open(f"{script_dir + '/' if script_dir else ''}assets/css/main.css") as main_css,\
-                open(f"{script_dir + '/' if script_dir else ''}assets/css/noscript.css") as noscript_css:
+            with open(f"{file_path + '/' if file_path else ''}acsahe.html", "r", encoding="UTF-8") as r, \
+                    open(f"{file_path + '/' if file_path else ''}assets/css/main.css") as main_css, \
+                    open(f"{file_path + '/' if file_path else ''}assets/css/noscript.css") as noscript_css, \
+                    open(f"{file_path + '/' if file_path else ''}assets/js/ctrl_p.js") as ctrl_p_js:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_result_file:
                     acsahe = r.read()
                     graph_html = fig.to_html(full_html=False)
                     tmp_result_file.write(acsahe.format(
                         main_css=main_css.read(),
                         noscript_css=noscript_css.read(),
+                        ctrl_p_js=ctrl_p_js.read(),
                         html_seccion=fig_seccion.to_html(full_html=False),
                         html_resultado=graph_html).encode("utf-8"))
                     tmp_file_path = tmp_result_file.name
@@ -960,5 +1081,77 @@ class ObtenerDiagramaDeInteraccion3D:
 
     @staticmethod
     def hover_text(lista_x, lista_y, lista_z, lista_phi, a):
-        return [f"Mx: {round(x, 2)} kNm<br>My: {round(y, 2)} kNm<br>N: {round(z, 2)} kN<br>PHI: {round(phi, 2)}<br>λ={a}°"
-                for x, y, z, phi, plano_def in zip(lista_x, lista_y, lista_z, lista_phi)]
+        return [
+            f"Mx: {round(x, 2)} kNm<br>My: {round(y, 2)} kNm<br>N: {round(z, 2)} kN<br>PHI: {round(phi, 2)}<br>λ={a}°"
+            for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
+
+    @staticmethod
+    def coordenadas_de_puntos_en_3d(lista_resultados_2d):
+        X, Y, Z = [], [], []
+        color_lista = []
+        phi_lista = []
+        plano_def = []
+        if not lista_resultados_2d:
+            return None
+        for resultado in lista_resultados_2d:
+            x = resultado["Mx"] / 100
+            y = resultado["My"] / 100
+            z = -resultado["sumF"]  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+            X.append(x)
+            Y.append(y)
+            Z.append(z)
+            phi_lista.append(resultado["phi"])
+            plano_def.append(resultado["plano_de_deformacion"])
+            color = resultado["color"]
+            color_lista.append(f"rgb({color[0]},{color[1]},{color[2]})")
+        return (X, Y, Z, phi_lista), color_lista, plano_def
+
+    @staticmethod
+    def caracteristicas_materiales_html(geometria):
+        return f"""<h3><a href="#">CARACTERÍSTICAS DE LOS MATERIALES</a></h3>
+                            <div class="table-wrapper">
+                                <table class="alt">
+                                    <colgroup>
+                                        <col style="width: 10%;"> <!-- First column width -->
+                                        <col style="width: 70%;"> <!-- Middle column width -->
+                                        <col style="width: 20%;"> <!-- Third column width -->
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>Material</th>
+                                            <th>Descripción</th>
+                                            <th>Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Hormigón</td>
+                                            <td>Calidad del hormigón.<br>El número indica la resistencia característica a la compresión expresada en Mpa.</td>
+                                            <td>H{geometria.hormigon.fc}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Acero Pasivo</td>
+                                            <td>Tipo de acero seleccionado para armadura pasiva.</td>
+                                            <td>{geometria}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Acero Activo</td>
+                                            <td>Tipo de acero seleccionado para armadura activa.<br>Deformación efectiva o de decompresión de acero de pretensado (producidas las pérdidas).</td>
+                                            <td>Trenzas C1900<br>5.21</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Armaduras Transversales</td>
+                                            <td>Tipo de armadura transversal, entre barras zunchadas o estribos</td>
+                                            <td>Estribos</td>
+                                        </tr>
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="2"></td>
+                                            <td>100.00</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>"""
+
+
