@@ -11,11 +11,11 @@ from scipy.optimize import fsolve
 
 from materiales.acero_pasivo import BarraAceroPasivo
 from materiales.acero_pretensado import BarraAceroPretensado
-from ext_utils.excel_manager import ExcelManager
+from build.ext_utils.excel_manager import ExcelManager
 from geometria.geometria_data_model import Nodo, Contorno, SeccionArbitraria, Segmento, ContornoCircular
 from materiales.hormigon import Hormigon
 from materiales.matrices import MatrizAceroPasivo, MatrizAceroActivo
-from ext_utils.plotly_util import PlotlyUtil
+from build.ext_utils.plotly_util import PlotlyUtil
 
 
 def show_message(message, titulo="Mensaje"):

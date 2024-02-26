@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Arc
 
-from ext_utils.plotly_util import PlotlyUtil
+from build.ext_utils.plotly_util import PlotlyUtil
 
 tolerancia = 10 ** -10
 lista_colores = ["r", "b", "g", "c", "m", "y", "k"]

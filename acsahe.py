@@ -40,10 +40,10 @@ class ACSAHE(QWidget):
 
     def initUI(self):
         self.setWindowTitle("ACSAHE")
-        logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}images\\LOGO ACSAHE.webp"
-        icon_path = f"{self.path_to_file + '/' if self.path_to_file else ''}images\\Logo H.webp"
+        logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO ACSAHE.webp"
+        icon_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo H.webp"
 
-        self.resize(300, 200)  # Tamaño de la pestaña
+        self.resize(600, 200)  # Tamaño de la pestaña
         self.center()  # La centramos
         self.layout = QVBoxLayout()
 
@@ -200,15 +200,15 @@ class ACSAHE(QWidget):
                 solucion_geometrica.insertar_valores_3D(data_subsets)
 
         pre_path = self.path_to_file + '/' if self.path_to_file else ''
-        with open(f"{pre_path}ext_utils/html/result_format.html", "r", encoding="UTF-8") as r, \
-                open(f"{pre_path}ext_utils/html/assets/css/main.css") as main_css, \
-                open(f"{pre_path}ext_utils/html/assets/css/noscript.css") as noscript_css, \
-                open(f"{pre_path}ext_utils/html/assets/js/ctrl_p.js") as ctrl_p_js:
+        with open(f"{pre_path}build\\ext_utils/html/result_format.html", "r", encoding="UTF-8") as r, \
+                open(f"{pre_path}build\\ext_utils/html/assets/css/main.css") as main_css, \
+                open(f"{pre_path}build\\ext_utils/html/assets/css/noscript.css") as noscript_css, \
+                open(f"{pre_path}build\\ext_utils/html/assets/js/ctrl_p.js") as ctrl_p_js:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_result_file:
                 acsahe = r.read()
                 graph_html = fig.to_html(full_html=False)
 
-                logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}images\\LOGO%20ACSAHE.webp"
+                logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO%20ACSAHE.webp"
 
                 tmp_result_file.write(acsahe.format(
                     main_css=main_css.read(),
@@ -285,31 +285,31 @@ class ACSAHE(QWidget):
                                     <tbody>
                                         <tr>
                                             <td>Área</td>
-                                            <td>Área de la sección bruta de Hormigón</td>
+                                            <td>Área de la sección bruta de Hormigón.</td>
                                             <td>{round(geometria.seccion_H.area, 2)} cm²</td>
                                         </tr>
                                         <tr>
                                             <td>Ix</td>
-                                            <td>Inercia con respecto al eje x</td>
+                                            <td>Inercia con respecto al eje x.</td>
                                             <td>{geometria.seccion_H.Ix} cm⁴</td>
                                         </tr>
                                         <tr>
                                             <td>Iy</td>
-                                            <td>Inercia con respecto al eje y</td>
+                                            <td>Inercia con respecto al eje y.</td>
                                             <td>{geometria.seccion_H.Iy} cm⁴</td>
                                         </tr>
                                         <tr>
-                                            <td>φ</td>
+                                            <td>ρ</td>
                                             <td>Cuantía geométrica de refuerzo pasivo.</td>
                                             <td>{geometria.EA.cuantia_geometrica(geometria.seccion_H.area, output_str=True)}</td>
                                         </tr>
                                                                                 {'''<tr>
-            <td>φp</td>
+            <td>ρp</td>
             <td>Cuantía geométrica de refuerzo activo.</td>'''+
             '<td>' + f'{geometria.EAP.cuantia_geometrica(geometria.seccion_H.area, output_str=True)}'+ '</td></tr>' if geometria.EAP else ''}
                                         <tr>
                                             <td>Discretización</td>
-                                            <td>Tipo de discretización elegida: {geometria.nivel_disc}</td>
+                                            <td>Tipo de discretización elegida: {geometria.nivel_disc}.</td>
                                             <td>{'ΔX=' + str(round(geometria.seccion_H.dx, 2)) + ' cm' if geometria.seccion_H.dx else ''}{'<br>ΔY=' + str(round(geometria.seccion_H.dy,2)) + ' cm' if geometria.seccion_H.dy else ''}{'<br>' if geometria.seccion_H.dx else ''}{'Δθ=' + str(round(geometria.seccion_H.d_ang,2)) + ' °' if geometria.seccion_H.d_ang else ''}{'<br>Δr=' + str(round(geometria.seccion_H.dr,2)) + ' cm' if geometria.seccion_H.dr else ''}</td>
                                         </tr>
                                         {'''<tr>

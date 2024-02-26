@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import math
-from ext_utils.plotly_util import PlotlyUtil
+from build.ext_utils.plotly_util import PlotlyUtil
 
 
 class MatrizAceroPasivo(list):
