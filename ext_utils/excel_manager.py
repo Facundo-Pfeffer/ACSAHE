@@ -2,7 +2,6 @@ import xlwings as xw
 
 
 class ExcelManager:
-
     default_columns_range_value = tuple([chr(x) for x in range(65, 65+7)])  # Tuple from A to G
     default_rows_range_value = tuple(range(1, 400))
 
@@ -10,8 +9,14 @@ class ExcelManager:
         self.wb = xw.Book(file_name)
         self.sh = self.wb.sheets[sheet_name]
 
+    def close(self):
+        del self.wb
+
     def get_value(self, column, row):
         return self.sh.range(f"{column}{row}").value
+
+    def change_cell_value_by_range(self, cell_address, new_value):
+        self.sh.range(cell_address).value = new_value
 
     def find_cell_by_value(self, wanted_value, columns_range=default_columns_range_value,
                            rows_range=default_rows_range_value):
@@ -102,12 +107,82 @@ class ExcelManager:
     def add_plot(self, fig, location, **kwargs):
         plot = self.sh.pictures.add(fig, update=True, left=self.sh.range(location).left, top=self.sh.range(location).top, **kwargs)
 
-    def insert_values_vertically(self, initial_cell, list_of_values):
-
-        columns_to_clean = ['I', 'J', 'K']
-        start_row = 3
-        for column in columns_to_clean:
-            column_range = self.sh.range(f"{column}{start_row}").expand("down")
-            column_range.clear()
-
+    def insert_values_vertically(self, initial_cell, list_of_values, columns_to_clean=None, start_row=3):
+        if columns_to_clean:
+            for column in columns_to_clean:
+                column_range = self.sh.range(f"{column}{start_row}").expand("down")
+                column_range.clear()
         self.sh.range(initial_cell).value = list_of_values
+
+    def calculate_new_range_by_coll_offset(self, original_range, column_offset):
+        # Split the original range into start and end cells
+        start_cell, end_cell = original_range.split(':')
+
+        # Convert start and end cells into new start and end cells based on column offset
+        new_start_cell = self.shift_cell_by_offset(start_cell, column_offset, 0)
+        new_end_cell = self.shift_cell_by_offset(end_cell, column_offset, 0)
+
+        # Return the new range in Excel format
+        return f"{new_start_cell}:{new_end_cell}"
+
+    def shift_cell_by_offset(self, cell, col_offset=0, row_offset=0):
+        # Extract column letters and row number from the cell
+        col_letters = ''.join(filter(str.isalpha, cell))
+        row_number = ''.join(filter(str.isdigit, cell))
+
+        # Convert the column letters to a number and apply the column offset
+        new_col_num = self.col_letter_to_num(col_letters) + col_offset
+
+        # Convert the new column number back to letters
+        new_col_letters = self.col_num_to_letter(new_col_num)
+
+        # Apply the row offset to the row number
+        new_row_number = int(row_number) + row_offset
+
+        # Construct and return the new cell reference
+        return f"{new_col_letters}{new_row_number}"
+
+    @staticmethod
+    def col_letter_to_num(col_str):
+        """Convert column letter(s) to a number."""
+        num = 0
+        for c in col_str.upper():
+            num = num * 26 + (ord(c) - ord('A') + 1)
+        return num
+
+    @staticmethod
+    def col_num_to_letter(col_num):
+        """Convert a column number back to letter(s)."""
+        col_str = ''
+        while col_num > 0:
+            col_num, remainder = divmod(col_num - 1, 26)
+            col_str = chr(65 + remainder) + col_str
+        return col_str
+
+    def copy_paste_range(self, original_range, new_range):
+        self.sh.range(original_range).copy(self.sh.range(new_range))
+
+    def clear_contents_from_column(self, start_column_number, offset=0):
+        # Find the last row and column
+        last_column_letter = self.sh.range('XFD2').end('left').column
+        if last_column_letter < start_column_number:
+            last_column_letter = start_column_number
+
+        start_column_letter = xw.utils.col_name(start_column_number)
+        last_column_letter = xw.utils.col_name(last_column_letter+offset)
+
+        # Define the range to clear
+        range_to_clear = f"{start_column_letter}:{last_column_letter}"
+        self.sh.range(range_to_clear).delete()
+
+    def clear_contents_from_row(self, start_row_number, offset=0):
+        # Find the last row and column
+        last_row = self.sh.range('A1048576').end(
+            'up').row  # Assuming Excel 2007 or later with a max of 1,048,576 rows
+        if last_row < start_row_number:
+            last_row = start_row_number
+
+        # Define the range to clear
+        start_row_number = max(start_row_number, 1)  # Ensure the start row is at least 1
+        range_to_clear = f"A{start_row_number}:XFD{last_row + offset}"  # XFD is the last column in Excel
+        self.sh.range(range_to_clear).clear_contents()

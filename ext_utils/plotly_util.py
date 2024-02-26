@@ -88,21 +88,25 @@ class PlotlyUtil(object):
         ymax_margin = ymax + (ymax - ymin) * margin
 
         for i, angulo in enumerate(lista_ang_planos_de_carga):
+
             angulo_rad = np.radians(angulo)
             x_intersect_min = xmin_margin
             x_intersect_max = xmax_margin
             if angulo != 0:
                 m = np.tan(np.pi / 2 - angulo_rad)  # Slope of the line
-                y_intersec_xmin = m * (xmin_margin - (xmin + xmax) / 2) + (ymin + ymax) / 2
-                y_intersec_xmax = m * (xmax_margin - (xmin + xmax) / 2) + (ymin + ymax) / 2
-
-                if abs(y_intersec_xmin) > abs(ymin_margin):
-                    x_intersect_min = ymin_margin/m
-                    x_intersect_max = ymax_margin/m
-                    y_intersec_xmax = ymax_margin
-                    y_intersec_xmin = ymin_margin
-
-                puntos = [(x_intersect_min, y_intersec_xmin), (x_intersect_max, y_intersec_xmax)]
+                y_at_xmin_margin = m * xmin_margin
+                y_at_xmax_margin = m * xmax_margin
+                x_at_ymin_margin = ymin_margin / m if m != 0 else float('inf')  # Check for division by zero
+                x_at_ymax_margin = ymax_margin / m if m != 0 else float('inf')
+                puntos = []
+                if ymin_margin <= y_at_xmin_margin <= ymax_margin:
+                    puntos.append((xmin_margin, y_at_xmin_margin))
+                if ymin_margin <= y_at_xmax_margin <= ymax_margin:
+                    puntos.append((xmax_margin, y_at_xmax_margin))
+                if xmin_margin <= x_at_ymin_margin <= xmax_margin:
+                    puntos.append((x_at_ymin_margin, ymin_margin))
+                if xmin_margin <= x_at_ymax_margin <= xmax_margin:
+                    puntos.append((x_at_ymax_margin, ymax_margin))
             else:
                 puntos = [(0, ymin_margin), (0, ymax_margin)]
 
@@ -189,12 +193,12 @@ class PlotlyUtil(object):
             if barra in barras_pasivo:
                 radio = barra.diametro / 20
                 acero_y_diamtro_string = f"{barra.tipo}<br>Ø{barra.diametro}mm"
-                hover_text = f"x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Ø{barra.diametro}mm"
+                hover_text = f"<b>Barra {barra.identificador}</b><br>x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Ø{barra.diametro}mm"
 
             else:
                 radio = (barra.area / math.pi) ** 0.5  # Equivalente
                 acero_y_diamtro_string = f"{barra.tipo}: {barra.area}cm²"
-                hover_text = f"x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Área efectiva: {barra.area}cm²"
+                hover_text = f"<b>Barra {barra.identificador}</b><br>x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Área efectiva: {barra.area}cm²"
 
             # Add shapes for circles
             shapes_list.append(dict(

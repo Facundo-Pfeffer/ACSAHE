@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Arc
 
-from plotly_util import PlotlyUtil
+from ext_utils.plotly_util import PlotlyUtil
 
-tolerancia = 10 ** -12
+tolerancia = 10 ** -10
 lista_colores = ["r", "b", "g", "c", "m", "y", "k"]
 lista_espesores = [x / 5 for x in range(10, 20)]
 
@@ -157,7 +157,7 @@ class Poligono(object):
         if valor_area == 0 and isinstance(self, Contorno):
             raise Exception(f"El contorno de índice {self.indice} contiene área 0. Por favor, revisar la entrada de datos.")
         self.area = valor_area
-        if valor_area > tolerancia ** 2:
+        if valor_area > tolerancia:
             self.nodo_centroide = self.determinar_centroide()
             self.xg, self.yg = self.nodo_centroide.x, self.nodo_centroide.y
             # Se definen estos atributos para determinar si el elemento fue modificado por una intersección (ver método)
@@ -464,6 +464,7 @@ class ElementoTrapecioCircular(object):
         self.angulo_inicial, self.angulo_final = min(angulos), max(angulos)
         self.radio_interno, self.radio_externo = min(radios), max(radios)
         self.nodo_centroide = nodo_centro
+        self.nodo_centro = nodo_centro
         self.xc = nodo_centro.x
         self.yc = nodo_centro.y
 
@@ -635,9 +636,9 @@ class Contorno(Poligono):
         lista_de_elementos = self.obtener_lista_de_elementos_preliminar(dx, dy)
         lista_de_elementos.sort(key=lambda elemento: (elemento.y, elemento.x))
         # Elementos con coordenadas no válidas deben ser limpiados
-        lista_elem_validos = [elem for elem in lista_de_elementos if elem.area > tolerancia ** 2 and (not (math.isnan(elem.xg) or math.isnan(elem.yg)))]
+        lista_elem_validos = [elem for elem in lista_de_elementos if elem.area > tolerancia and (not (math.isnan(elem.xg) or math.isnan(elem.yg)))]
         return self.eliminar_elementos_fuera_de_contorno(
-            lista_elem_validos)  # Limpieza adicional de elementos no validos.
+            lista_elem_validos)  # Limpieza adicional de elementos no válidos.
 
     def obtener_lista_de_elementos_preliminar(self, dx, dy):
         """Obtiene la lista de elementos preliminarmente del rectángulo mayor que contiene al contorno, para luego
@@ -709,7 +710,7 @@ class SeccionArbitraria(object):
         self.contornos_negativos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == -1]
         self.contornos_positivos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == 1]
         self.elementos = self.obtener_matriz_elementos_positivos()
-        self.area, self.xg, self.yg = self.obtener_baricentro_y_area()
+        self.area, self.xg, self.yg, self.Ix, self.Iy = self.obtener_baricentro_y_area()
         self.cambiar_coordenadas_a_baricentro()
         self.x_min, self.x_max, self.y_min, self.y_max = self.obtener_valores_extremos()
 
@@ -726,7 +727,7 @@ class SeccionArbitraria(object):
                         elemento_positivo) or elemento_positivo.area < tolerancia:
                     continue  # Descartar elemento
                 elemento_intersectado = self.obtener_interseccion_elemento_positivo_con_negativo(elemento_positivo)
-                if elemento_intersectado:
+                if elemento_intersectado and elemento_intersectado.area > tolerancia:
                     result.append(elemento_intersectado)
         if len(result) == 0:
             raise Exception("Error en la generación de la geometría:\n"
@@ -772,11 +773,15 @@ class SeccionArbitraria(object):
         area_total = 0
         sx = 0
         sy = 0
+        Ix = 0
+        Iy = 0
         for elemento in self.elementos:
             area_total = area_total + elemento.area
             sx = sx + elemento.area * elemento.xg
             sy = sy + elemento.area * elemento.yg
-        return round(area_total, 10), round(sx / area_total, 10), round(sy / area_total, 10)
+            Ix = Ix + elemento.area * (elemento.yg**2)
+            Iy = Iy + elemento.area * (elemento.xg**2)
+        return round(area_total, 10), round(sx / area_total, 10), round(sy / area_total, 10), int(Ix), int(Iy)
 
     def cambiar_coordenadas_a_baricentro(self):
         for elemento in self.elementos:

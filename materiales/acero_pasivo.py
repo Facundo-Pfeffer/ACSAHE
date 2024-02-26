@@ -9,9 +9,13 @@ class BarraAceroPasivo():
     ey = None
     eu = None
 
-    def __init__(self, x, y, d):
+    def __init__(self, x, y, d, identificador):
         """Antes de inicializar una instancia de esta clase, los valores de fy [tension de fluencia del acero] y
-        E [modulo de elasticidad del material] deben ser inicializados por afuera de la clase."""
+        E [módulo de elasticidad del material] deben ser inicializados por afuera de la clase."""
+        try:
+            self.identificador = int(identificador)
+        except Exception:
+            self.identificador = identificador
         self.ey = self.fy/self.E
         self.x = x
         self.xg = x

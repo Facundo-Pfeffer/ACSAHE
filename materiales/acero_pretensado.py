@@ -41,7 +41,11 @@ class BarraAceroPretensado():
     Eps = None
     deformacion_de_pretensado_inicial = 0.00
 
-    def __init__(self, x, y, area):
+    def __init__(self, x, y, area, identificador):
+        try:
+            self.identificador = int(identificador)
+        except Exception:
+            self.identificador = identificador
         self.x = x
         self.xg = x
         self.y = y

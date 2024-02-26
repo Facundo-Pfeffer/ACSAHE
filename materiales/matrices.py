@@ -1,9 +1,6 @@
 import matplotlib.pyplot as plt
 import math
-import plotly
-from plotly_util import PlotlyUtil
-import plotly.graph_objs as go
-from matplotlib.lines import Line2D
+from ext_utils.plotly_util import PlotlyUtil
 
 
 class MatrizAceroPasivo(list):
@@ -42,6 +39,14 @@ class MatrizAceroPasivo(list):
             circ = plt.Circle(xy=(barra.xg, barra.yg), radius=barra.diametro / 20, color='r', zorder=21)
             ax.add_patch(circ)
         return ax
+
+    def cuantia_geometrica(self, area_bruta_hormigon, output_str=False):
+        if area_bruta_hormigon == 0:
+            return None
+        area_acero = sum([x.area for x in self])
+        if output_str is False:
+            return area_acero/area_bruta_hormigon
+        return f"{round(area_acero/area_bruta_hormigon*100,2)}%"
 
 
 class MatrizAceroActivo(list):
@@ -84,3 +89,11 @@ class MatrizAceroActivo(list):
             radio_equivalente = (barra.area / math.pi) ** 0.5
             circ = plt.Circle(xy=(barra.xg, barra.yg), radius=radio_equivalente, color='b', zorder=20)
             ax.add_patch(circ)
+
+    def cuantia_geometrica(self, area_bruta_hormigon, output_str=False):
+        if area_bruta_hormigon == 0:
+            return None
+        area_acero = sum([x.area for x in self])
+        if output_str is False:
+            return area_acero/area_bruta_hormigon
+        return f"{round(area_acero/area_bruta_hormigon*100, 2)}%"
