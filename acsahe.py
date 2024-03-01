@@ -36,7 +36,6 @@ class ACSAHE(QWidget):
         self.path_to_file = path_to_file
         self.app = app
         self.initUI()
-        time.sleep(1)
         self.close()
 
     def initUI(self):
@@ -84,6 +83,7 @@ class ACSAHE(QWidget):
         self.setLayout(self.layout)
 
         self.show()
+        self.update_progress_bar(int(0))
         try:
             self.start_process()
         except Exception as e:
@@ -131,11 +131,14 @@ class ACSAHE(QWidget):
         solucion_geometrica = ResolucionGeometrica(
             file_path=f"{self.path_to_file + '/' if self.path_to_file else ''}{self.file_name}")
 
+        lista_ang = solucion_geometrica.lista_ang_plano_de_carga
+        lista_ang.sort()
+
         try:
-            self.steps = 2 + len(solucion_geometrica.lista_ang_plano_de_carga)
+            self.steps = 2 + len(lista_ang)
             time.sleep(1)
             self.update_message(self.mensajes_progress_bar["Inicio"].format(
-                plano_de_carga=solucion_geometrica.lista_ang_plano_de_carga[0]))
+                plano_de_carga=lista_ang[0]))
             self.update_progress_bar(int(10))
             # self.step_length = 100 / self.steps
 
@@ -144,8 +147,8 @@ class ACSAHE(QWidget):
             lista_x_total_sin_phi, lista_y_total_sin_phi, lista_z_total_sin_phi = [], [], []
 
             for step in range(2, self.steps + 1):
-                if step < 2 + len(solucion_geometrica.lista_ang_plano_de_carga):
-                    angulo_plano_de_carga = solucion_geometrica.lista_ang_plano_de_carga[step - 2]
+                if step < 2 + len(lista_ang):
+                    angulo_plano_de_carga = lista_ang[step - 2]
                     self.update_message(
                         self.mensajes_progress_bar["Medio"].format(plano_de_carga=angulo_plano_de_carga))
                     QApplication.processEvents()
@@ -186,9 +189,16 @@ class ACSAHE(QWidget):
                     self.construir_resultado_html(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
                                                   lista_text_total, lista_color_total, data_subsets)
         finally:
-            self.update_message("ACSAHE ha finalizado!")
+            mensaje_extra = self.obtener_mensaje_hoja_de_resultados(solucion_geometrica)
+            self.update_message(f"ACSAHE ha finalizado!{mensaje_extra}")
             QApplication.processEvents()
             solucion_geometrica.cerrar_hojas_de_calculo()
+            time.sleep(1 if mensaje_extra else 0)
+            # Ensure the window is visible, at the front, and active
+            self.showNormal()  # Restores the window if minimized
+            self.raise_()  # Brings the window to the front
+            self.activateWindow()  # Makes the window the active window
+            time.sleep(1 if not mensaje_extra else 5)
 
     def construir_resultado_html(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
                                  lista_text_total, lista_color_total, data_subsets):
@@ -234,6 +244,14 @@ class ACSAHE(QWidget):
 
         # fig.show()
         webbrowser.open('file://' + tmp_file_path)
+
+    @staticmethod
+    def obtener_mensaje_hoja_de_resultados(solucion_geometrica):
+        if solucion_geometrica.problema["tipo"] == "3D" and solucion_geometrica.problema["resultados_en_wb"] is True:
+            return "\n\nSe ha habilitado la hoja 'Resultados 3D' en la planilla.\n"
+        elif solucion_geometrica.problema["tipo"] == "2D" and solucion_geometrica.problema["resultados_en_wb"] is True:
+            return "\n\nSe ha habilitado la hoja 'Resultados 2D' en la planilla.\n"
+        return ""
 
     @staticmethod
     def caracteristicas_materiales_html(geometria: ResolucionGeometrica):

@@ -476,9 +476,9 @@ class ResolucionGeometrica:
     def setear_propiedades_acero_activo(self, def_de_pretensado_inicial):
         try:
             tipo = self.ingreso_datos_wb.get_value("C", "8")
-            tipo = tipo.upper()
+            tipo = tipo
             self.acero_activo = tipo
-            if tipo == "Provisto por usuario".upper():
+            if tipo == "Provisto por usuario":
                 valores = {
                     "tipo": "Provisto por usuario",
                     "Eps": self.armaduras_activas_wb.get_value("E", "3"),
@@ -488,7 +488,7 @@ class ResolucionGeometrica:
                     "N": self.armaduras_activas_wb.get_value("E", "7"),
                     "K": self.armaduras_activas_wb.get_value("E", "8"),
                     "Q": self.armaduras_activas_wb.get_value("E", "9"),
-                    "deformacion_de_pretensado_inicial": self.ingreso_datos_wb.get_value("E", "8")
+                    "deformacion_de_pretensado_inicial": def_de_pretensado_inicial
                 }
 
                 if not all(bool(v) for k, v in valores.items()):
@@ -502,14 +502,15 @@ class ResolucionGeometrica:
                     setattr(BarraAceroPretensado, k, v)
 
             else:
-                values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo)
+                values = BarraAceroPretensado.tipos_de_acero_y_valores.get(tipo.upper())
                 for k, v in values.items():
                     setattr(BarraAceroPretensado, k, v)
                 BarraAceroPretensado.tipo = tipo
                 BarraAceroPretensado.Eps = 20000  # kN/cm²
                 BarraAceroPretensado.deformacion_de_pretensado_inicial = def_de_pretensado_inicial
         except Exception as e:
-            raise Exception("No se pudieron setear las propiedades del acero activo, revise configuración")
+
+            raise Exception("No se pudieron establecer las propiedades del acero activo, revise configuración")
 
     def obtener_indice(self, contorno):
         value = self.ingreso_datos_wb.get_value("A", contorno[0])
@@ -719,8 +720,6 @@ class ResolucionGeometrica:
 
             puntos_a_verificar = np.array([Y, X]).transpose().tolist()
             self.diagrama_interaccion_wb.insert_values_vertically("N3", puntos_a_verificar, columns_to_clean=["N", "O"], start_row=3)
-            show_message("ACSAHE ha finalizado! Se ha habilitado la hoja 'Resultados 2D' con los resultados.")
-
 
     def insertar_valores_3D(self, data_subset):
         i = 0  # contador
@@ -742,5 +741,3 @@ class ResolucionGeometrica:
                 list_values,
                 start_row=4)
             i = i + 1
-        show_message("ACSAHE ha finalizado! Se ha habilitado la hoja 'Resultados 3D' con los resultados.")
-

@@ -193,12 +193,11 @@ class PlotlyUtil(object):
             tipo = "ACERO PASIVO" if barra in barras_pasivo else "ACERO ACTIVO"
             if barra in barras_pasivo:
                 radio = barra.diametro / 20
-                acero_y_diamtro_string = f"{barra.tipo}<br>Ø{barra.diametro}mm"
+                acero_y_diamtro_string = f"{barra.tipo}<br>Ø{round(barra.diametro)}mm"
                 hover_text = f"<b>Barra {barra.identificador}</b><br>x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Ø{barra.diametro}mm"
-
             else:
                 radio = (barra.area / math.pi) ** 0.5  # Equivalente
-                acero_y_diamtro_string = f"{barra.tipo}: {barra.area}cm²"
+                acero_y_diamtro_string = f"{barra.tipo}<br>Área: {barra.area}cm²"
                 hover_text = f"<b>Barra {barra.identificador}</b><br>x: {barra.xg} cm<br>y: {barra.yg} cm<br>Tipo: {barra.tipo}<br>Área efectiva: {barra.area}cm²"
 
             # Add shapes for circles
