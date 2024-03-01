@@ -1,6 +1,7 @@
 import tempfile
 import time
 import webbrowser
+import base64
 
 import numpy as np
 import math
@@ -42,8 +43,9 @@ class ACSAHE(QWidget):
         self.setWindowTitle("ACSAHE")
         logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO ACSAHE.webp"
         icon_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo H.webp"
+        self.icon_path_ico = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo_H.ico"
 
-        self.resize(600, 200)  # Tamaño de la pestaña
+        self.resize(650, 200)  # Tamaño de la pestaña
         self.center()  # La centramos
         self.layout = QVBoxLayout()
 
@@ -94,7 +96,6 @@ class ACSAHE(QWidget):
         qr.moveCenter(cp)  # Set the window rectangle center to the screen center
         self.move(qr.topLeft())  # Move the window's top-left point
 
-
     def update_progress_bar(self, value):
         self.progress.setValue(value)
 
@@ -133,7 +134,8 @@ class ACSAHE(QWidget):
         try:
             self.steps = 2 + len(solucion_geometrica.lista_ang_plano_de_carga)
             time.sleep(1)
-            self.update_message(self.mensajes_progress_bar["Inicio"].format(plano_de_carga=solucion_geometrica.lista_ang_plano_de_carga[0]))
+            self.update_message(self.mensajes_progress_bar["Inicio"].format(
+                plano_de_carga=solucion_geometrica.lista_ang_plano_de_carga[0]))
             self.update_progress_bar(int(10))
             # self.step_length = 100 / self.steps
 
@@ -144,7 +146,8 @@ class ACSAHE(QWidget):
             for step in range(2, self.steps + 1):
                 if step < 2 + len(solucion_geometrica.lista_ang_plano_de_carga):
                     angulo_plano_de_carga = solucion_geometrica.lista_ang_plano_de_carga[step - 2]
-                    self.update_message(self.mensajes_progress_bar["Medio"].format(plano_de_carga=angulo_plano_de_carga))
+                    self.update_message(
+                        self.mensajes_progress_bar["Medio"].format(plano_de_carga=angulo_plano_de_carga))
                     QApplication.processEvents()
 
                     solucion_parcial = DiagramaInteraccion2D(angulo_plano_de_carga, solucion_geometrica)
@@ -153,12 +156,13 @@ class ACSAHE(QWidget):
                         solucion_parcial.lista_resultados)
 
                     lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial = coordenadas
+                    es_phi_constante = isinstance(solucion_geometrica.problema["phi_variable"], float)
                     if solucion_geometrica.problema["tipo"] == "3D":
                         texto = self.hover_text_3d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
-                                                angulo_plano_de_carga)
+                                                   angulo_plano_de_carga, es_phi_constante)
                     else:
                         texto = self.hover_text_2d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
-                                                angulo_plano_de_carga)
+                                                   angulo_plano_de_carga, es_phi_constante)
                     data_subsets[str(angulo_plano_de_carga)] = {
                         "x": lista_x_parcial.copy(),
                         "y": lista_y_parcial.copy(),
@@ -186,16 +190,20 @@ class ACSAHE(QWidget):
             QApplication.processEvents()
             solucion_geometrica.cerrar_hojas_de_calculo()
 
-    def construir_resultado_html(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total, lista_color_total, data_subsets):
+    def construir_resultado_html(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
+                                 lista_text_total, lista_color_total, data_subsets):
 
         fig_seccion = solucion_geometrica.construir_grafica_seccion_plotly()
 
         if solucion_geometrica.problema["tipo"] == "2D":
-            fig = self.print_2d(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total, lista_color_total, data_subsets)
+            fig = self.print_2d(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
+                                lista_color_total, data_subsets)
             if solucion_geometrica.problema["resultados_en_wb"] is True:
-                solucion_geometrica.insertar_valores_2D(data_subsets, solucion_geometrica.problema["puntos_a_verificar"])
+                solucion_geometrica.insertar_valores_2D(data_subsets,
+                                                        solucion_geometrica.problema["puntos_a_verificar"])
         else:
-            fig = self.print_3d(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total, lista_color_total, data_subsets)
+            fig = self.print_3d(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
+                                lista_color_total, data_subsets)
             if solucion_geometrica.problema["resultados_en_wb"] is True:
                 solucion_geometrica.insertar_valores_3D(data_subsets)
 
@@ -203,14 +211,17 @@ class ACSAHE(QWidget):
         with open(f"{pre_path}build\\ext_utils/html/result_format.html", "r", encoding="UTF-8") as r, \
                 open(f"{pre_path}build\\ext_utils/html/assets/css/main.css") as main_css, \
                 open(f"{pre_path}build\\ext_utils/html/assets/css/noscript.css") as noscript_css, \
-                open(f"{pre_path}build\\ext_utils/html/assets/js/ctrl_p.js") as ctrl_p_js:
+                open(f"{pre_path}build\\ext_utils/html/assets/js/ctrl_p.js") as ctrl_p_js, \
+                open(self.icon_path_ico, 'rb') as icon_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_result_file:
                 acsahe = r.read()
                 graph_html = fig.to_html(full_html=False)
 
                 logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO%20ACSAHE.webp"
-
+                encoded_icon_string = base64.b64encode(icon_file.read()).decode('utf-8')
                 tmp_result_file.write(acsahe.format(
+                    icon_encoded=encoded_icon_string,
+                    archivo=f"Archivo: {self.file_name}",
                     main_css=main_css.read(),
                     noscript_css=noscript_css.read(),
                     ctrl_p_js=ctrl_p_js.read(),
@@ -244,7 +255,7 @@ class ACSAHE(QWidget):
                                     <tbody>
                                         <tr>
                                             <td>Hormigón</td>
-                                            <td>Calidad del hormigón.<br>El número indica la resistencia característica a la compresión expresada en Mpa.</td>
+                                            <td>Calidad del hormigón.<br>El número indica la resistencia característica a la compresión expresada en MPa.</td>
                                             <td>{'H' + str(int(geometria.hormigon.fc))}</td>
                                         </tr>
                                         <tr>
@@ -254,8 +265,8 @@ class ACSAHE(QWidget):
                                         </tr>
                                         {'''<tr>
                                         <td>Acero Activo</td>
-                                        <td>Tipo de acero seleccionado para armadura activa.<br>Deformación efectiva del acero de pretensado (producidas las pérdidas).</td>'''+
-                                        '<td>' + f'{geometria.acero_activo}'+'<br>' + f'{geometria.def_de_pretensado_inicial*1000}‰'+'</td></tr>' if geometria.EAP else ''}
+                                        <td>Tipo de acero seleccionado para armadura activa.<br>Deformación efectiva del acero de pretensado (producidas las pérdidas).</td>''' +
+                                         '<td>' + f'{geometria.acero_activo}' + '<br>' + f'{geometria.def_de_pretensado_inicial * 1000}‰' + '</td></tr>' if geometria.EAP else ''}
                                         <tr>
                                             <td>Armaduras Transversales</td>
                                             <td>Tipo de armadura transversal seleccionada.</td>
@@ -305,17 +316,19 @@ class ACSAHE(QWidget):
                                         </tr>
                                                                                 {'''<tr>
             <td>ρp</td>
-            <td>Cuantía geométrica de refuerzo activo.</td>'''+
-            '<td>' + f'{geometria.EAP.cuantia_geometrica(geometria.seccion_H.area, output_str=True)}'+ '</td></tr>' if geometria.EAP else ''}
+            <td>Cuantía geométrica de refuerzo activo.</td>''' +
+                                                                                 '<td>' + f'{geometria.EAP.cuantia_geometrica(geometria.seccion_H.area, output_str=True)}' + '</td></tr>' if geometria.EAP else ''}
                                         <tr>
                                             <td>Discretización</td>
                                             <td>Tipo de discretización elegida: {geometria.nivel_disc}.</td>
-                                            <td>{'ΔX=' + str(round(geometria.seccion_H.dx, 2)) + ' cm' if geometria.seccion_H.dx else ''}{'<br>ΔY=' + str(round(geometria.seccion_H.dy,2)) + ' cm' if geometria.seccion_H.dy else ''}{'<br>' if geometria.seccion_H.dx else ''}{'Δθ=' + str(round(geometria.seccion_H.d_ang,2)) + ' °' if geometria.seccion_H.d_ang else ''}{'<br>Δr=' + str(round(geometria.seccion_H.dr,2)) + ' cm' if geometria.seccion_H.dr else ''}</td>
+                                            <td>{'ΔX=' + str(round(geometria.seccion_H.dx, 2)) + ' cm' if geometria.seccion_H.dx else ''}{'<br>ΔY=' + str(round(geometria.seccion_H.dy, 2)) + ' cm' if geometria.seccion_H.dy else ''}{'<br>' if geometria.seccion_H.dx else ''}
+{'Δθ=' + str(round(geometria.seccion_H.d_ang, 2)) + ' °' if geometria.seccion_H.d_ang else ''}
+{'<br>Δr:' + str(round(geometria.seccion_H.dr, 2)) + ' particiones<br>(variación logarítmica)' if geometria.seccion_H.dr else ''}</td>
                                         </tr>
                                         {'''<tr>
             <td>Pretensado</td>
-            <td>Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.</td>'''+
-            '<td>' + f'{geometria.mostrar_informacion_pretensado()}'+ '</td></tr>' if geometria.EAP else ''}
+            <td>Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.</td>''' +
+                                         '<td>' + f'{geometria.mostrar_informacion_pretensado()}' + '</td></tr>' if geometria.EAP else ''}
                                     </tbody>
                                 </table>
                             </div>"""
@@ -328,7 +341,7 @@ class ACSAHE(QWidget):
             mode='markers',
             marker=dict(
                 size=4,
-                color="lightgrey",
+                color="black",
                 symbol='diamond-open',
             ),
             text=self.hover_text_estados(X, Y, Z, NOMBRE),
@@ -338,10 +351,12 @@ class ACSAHE(QWidget):
             **kwargs
         ))
 
-    def print_3d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total, lista_color_total, data_subsets):
+    def print_3d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
+                 lista_color_total, data_subsets):
         X = [x["Mx"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         Y = [x["My"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-        Z = [-x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"]]  # Positivo para transformar a compresión positiva
+        Z = [x["P"] for x in
+             solucion_geometrica.problema["puntos_a_verificar"]]  # Positivo para transformar a compresión positiva
         NOMBRE = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
 
         plano_de_carga_lista = [x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
@@ -358,7 +373,7 @@ class ACSAHE(QWidget):
             estados_subsets[plano_de_carga]["z"].append(Z[i])
             estados_subsets[plano_de_carga]["nombre"].append(NOMBRE[i])
 
-        fig = go.Figure(layout_template="plotly_dark")
+        fig = go.Figure(layout_template="plotly_white")
         fig.add_trace(go.Scatter3d(
             x=lista_x_total,
             y=lista_y_total,
@@ -373,32 +388,38 @@ class ACSAHE(QWidget):
 
         lista_botones = self.agregar_diferentes_botones(fig, data_subsets, estados_subsets)
 
-        rango_min = min(min(lista_x_total+X), min(lista_y_total+Y))
-        rango_max = max(max(lista_x_total+X), max(lista_y_total+Y))
+        rango_min = min(min(lista_x_total + X), min(lista_y_total + Y))
+        rango_max = max(max(lista_x_total + X), max(lista_y_total + Y))
 
         self.agregar_punto_estado(fig, X, Y, Z, NOMBRE)
 
         fig.update_layout(
             title=dict(
-                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción 3D</span><br><span style="font-size: 20px;">Archivo: {self.file_name}</span>',
+                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción 3D</span></span>',
                 x=0.5,
                 font=dict(color="rgb(142, 180, 227)",
                           family='Times New Roman')),
             scene=dict(
-                xaxis_title='Mx [kNm]',
-                yaxis_title='My [kNm]',
-                zaxis_title='N [kN]',
+                xaxis_title='ϕMnx [kNm]',
+                yaxis_title='ϕMny [kNm]',
+                zaxis_title='ϕPn [kN]',
                 xaxis=dict(
+                    linecolor="Grey",
+                    showline=True,
                     title_font=dict(family='Times New Roman', size=16),
                     range=[rango_min, rango_max]
                 ),
                 yaxis=dict(
+                    linecolor="Grey",
+                    showline=True,
                     title_font=dict(family='Times New Roman', size=16),
                     range=[rango_min, rango_max]
                 ),
                 zaxis=dict(
+                    linecolor="Grey",
+                    showline=True,
                     title_font=dict(family='Times New Roman', size=16),
-                    range=[min(lista_z_total+Z), max(lista_z_total+Z)]),
+                    range=[min(lista_z_total + Z), max(lista_z_total + Z)]),
                 aspectmode='manual',  # Set aspect ratio manually
                 aspectratio=dict(x=1, y=1, z=1),
             ))
@@ -414,16 +435,19 @@ class ACSAHE(QWidget):
 
         return fig
 
-    def print_2d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total, lista_color_total,
+    def print_2d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
+                 lista_color_total,
                  data_subsets):
         fig = go.Figure(
-            layout_template="plotly_dark"
+            layout_template="plotly_white"
         )
-        lista_x_total = [(1 if x > 0 else -1 if x!=0 else 1 if y>=0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y in
+        lista_x_total = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y
+                         in
                          zip(lista_x_total, lista_y_total)]
 
         X = [x["M"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-        Y = [-x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"]]  # Menos para transformar a compresión positivo.
+        Y = [x["P"] for x in
+             solucion_geometrica.problema["puntos_a_verificar"]]  # Menos para transformar a compresión positivo.
         nombre = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         text_estados_2d = self.hover_text_estados_2d(X, Y, nombre)
 
@@ -442,8 +466,8 @@ class ACSAHE(QWidget):
             x=X,
             y=Y,
             mode='markers',
-            marker=dict(size=6,
-                        color='white',
+            marker=dict(size=10,
+                        color='#1f77b4',
                         symbol='diamond-open'),
             text=text_estados_2d,
             hoverinfo='text',
@@ -451,38 +475,50 @@ class ACSAHE(QWidget):
             visible=True,
         ))
 
-        rango_min_x = min(lista_x_total + X)*1.1
-        rango_max_x = max(lista_x_total + X)*1.1
-        rango_min_y = min(lista_z_total + Y)*1.1
-        rango_max_y = max(lista_z_total + Y)*1.1
+        rango_min_x = min(lista_x_total + X) * 1.2
+        rango_max_x = max(lista_x_total + X) * 1.2
+        rango_min_y = min(lista_z_total + Y) * 1.1
+        rango_max_y = max(lista_z_total + Y) * 1.2
 
         # Custom axis lines
         fig.add_shape(type="line", x0=rango_min_x, y0=0, x1=rango_max_x, y1=0, line=dict(color="grey", width=1))
         fig.add_shape(type="line", x0=0, y0=rango_min_y, x1=0, y1=rango_max_y, line=dict(color="grey", width=1))
 
-        # Axis Arrows
-        fig.add_annotation(x=rango_max_x, y=0, text="M [kNm]", showarrow=False,
-                           xanchor="left", yanchor="middle", font=dict(color="grey", size=14, family='Times New Roman'))
-        fig.add_annotation(x=0, y=rango_max_y, text="N [kN]", showarrow=False, textangle=-90,
-                           xanchor="right", yanchor="middle", font=dict(color="grey", size=14, family='Times New Roman'))
+        fig.update_xaxes(title_text="ϕMnλ [kNm]",
+                         title_font=dict(
+                             family="Times New Roman",
+                             size=16))
+        fig.update_yaxes(title_text="ϕPn [kN]",
+                         title_font=dict(
+                             family="Times New Roman",
+                             size=16))
 
         fig.update_layout(
             title=dict(
                 text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción para λ={list(data_subsets.keys())[0]} °</span><br><span style="font-size: 20px;">Archivo: {self.file_name}</span>',
                 # text=f"<b>ACSAHEArchivo: {self.file_name}</b>",
                 x=0.5,
-                font=dict(color="rgb(142, 180, 227)", family='Times New Roman')),
-            xaxis=dict(showticklabels=True, showgrid=True, zeroline=False),
-            yaxis=dict(showticklabels=True, showgrid=True, zeroline=False),
+                font=dict(
+                    color="rgb(142, 180, 227)",
+                    family='Times New Roman')),
+            xaxis=dict(showticklabels=True,
+                       showgrid=True,
+                       zeroline=True),
+            yaxis=dict(showticklabels=True, showgrid=True, zeroline=True),
             showlegend=False,
         )
+
+        fig.update_layout({
+            'plot_bgcolor': 'rgba(0,0,0,0)',  # This sets the plot background to transparent
+            'paper_bgcolor': 'rgba(0,0,0,0)',  # This sets the paper (overall figure) background to transparent
+        })
 
         return fig
 
     def agregar_diferentes_botones(self, fig, data_subsets, estados_subsets):
         traces = [(1, "Mostrar todos")]
         # Add each subset as a separate trace, initially invisible
-        for angulo, subset in data_subsets.items():
+        for angulo, subset in sorted(data_subsets.items(), key=lambda item: float(item[0])):
             traces.append((1, f"λ={angulo}º"))
             fig.add_trace(go.Scatter3d(
                 x=subset['x'],
@@ -493,7 +529,8 @@ class ACSAHE(QWidget):
                 text=subset['text'],
                 hoverinfo='text',
                 name=f"λ={angulo}º",
-                visible=False  # Initially invisible
+                showlegend=False,
+            visible=False  # Initially invisible
             ))
             if angulo in estados_subsets.keys():
                 fig.add_trace(go.Scatter3d(
@@ -502,7 +539,7 @@ class ACSAHE(QWidget):
                     z=estados_subsets[angulo]['z'],
                     mode='markers',
                     marker=dict(size=4,
-                                color='white',
+                                color='black',
                                 symbol='diamond-open'),
                     text=self.hover_text_estados(estados_subsets[angulo]['x'],
                                                  estados_subsets[angulo]['y'],
@@ -510,7 +547,8 @@ class ACSAHE(QWidget):
                                                  estados_subsets[angulo]['nombre']),
                     hoverinfo='text',
                     name=f"λ={angulo}º",
-                    visible=False  # Initially invisible
+                    visible=False,
+                    showlegend=False
                 ))
                 traces.append(2)
 
@@ -530,18 +568,18 @@ class ACSAHE(QWidget):
             ))
         return buttons
 
+    @staticmethod
+    def hover_text_2d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante):
+        M_lista = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y in
+                   zip(lista_x, lista_y)]
+        return [
+            f"ϕPn: {round(z, 2)} kN<br>ϕMnλ: {round(M, 2)} kNm<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
+            for x, y, z, phi, M in zip(lista_x, lista_y, lista_z, lista_phi, M_lista)]
 
     @staticmethod
-    def hover_text_2d(lista_x, lista_y, lista_z, lista_phi, a):
-        M_lista = [(1 if x > 0 else -1 if x!=0 else 1 if y>=0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y in
-                         zip(lista_x, lista_y)]
+    def hover_text_3d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante):
         return [
-            f"ϕN: {round(z, 2)} kN<br>ϕM: {round(M, 2)} kNm<br>ϕMx: {round(x, 2)} kNm<br>ϕMy: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}<br>λ={a}°"
-            for x, y, z, phi, M in zip(lista_x, lista_y, lista_z, lista_phi, M_lista)]
-    @staticmethod
-    def hover_text_3d(lista_x, lista_y, lista_z, lista_phi, a):
-        return [
-            f"ϕN: {round(z, 2)} kN<br>ϕMx: {round(x, 2)} kNm<br>ϕMy: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}<br>λ={a}°"
+            f"ϕPn: {round(z, 2)} kN<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
             for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
 
     @staticmethod
@@ -549,7 +587,6 @@ class ACSAHE(QWidget):
         return [
             f"<b>Estado: {estado}</b><br>Pu: {round(z, 2)} kN<br>Mxu: {round(x, 2)} kNm<br>Myu: {round(y, 2)} kNm"
             for x, y, z, estado in zip(lista_x, lista_y, lista_z, lista_estado)]
-
 
     @staticmethod
     def hover_text_estados_2d(lista_x, lista_y, lista_estado):

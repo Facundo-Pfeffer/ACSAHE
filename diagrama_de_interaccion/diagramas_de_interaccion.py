@@ -25,11 +25,10 @@ class DiagramaInteraccion2D:
         self.geometria = solucion_geometrica
         self.medir_diferencias = []
         self.angulo_plano_de_carga_esperado = angulo_plano_de_carga
+        self.phi_variable = solucion_geometrica.problema["phi_variable"]
         try:
-
             self.lista_planos_sin_solucion = []
             self.lista_resultados = self.iterar()
-
         except Exception as e:
             traceback.print_exc()
             show_message(e)
@@ -212,6 +211,9 @@ class DiagramaInteraccion2D:
         return sumF, Mx, My, factor_minoracion_de_resistencia
 
     def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
+        if isinstance(self.phi_variable, float):
+            phi_constante = self.phi_variable
+            return phi_constante
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
         if len(EA_girado) == 0 and len(EAP_girado) == 0:  # Hormigón Simple
             return 0.55

@@ -15,7 +15,7 @@ class PlotlyUtil(object):
     def obtener_fig(fig):
         if fig is not None:
             return fig
-        fig = go.Figure(layout_template="plotly_dark")
+        fig = go.Figure(layout_template="plotly_white")
         fig.update_yaxes(
             scaleanchor="x",
             scaleratio=1,
@@ -71,14 +71,15 @@ class PlotlyUtil(object):
                      showlegend=False,
                      )))
 
-        self.plot_angulos_planos_de_carga(seccion, lista_de_angulos_plano_de_carga)
+        self.plot_angulos_planos_de_carga_y_ejes(seccion, lista_de_angulos_plano_de_carga)
 
-    def plot_angulos_planos_de_carga(self, seccion, lista_ang_planos_de_carga):
+
+    def plot_angulos_planos_de_carga_y_ejes(self, seccion, lista_ang_planos_de_carga):
         lista_ang_planos_de_carga.sort()
         xmin, xmax, ymin, ymax = seccion.x_min, seccion.x_max, seccion.y_min, seccion.y_max
 
         line_styles = ['solid', 'dash', 'dot', 'dashdot']
-        line_colors = ['grey', 'white']
+        line_colors = ['grey', 'black']
 
         # Adjust limits to include a margin
         margin = 0.05  # 5% of each axis range
@@ -221,10 +222,7 @@ class PlotlyUtil(object):
             text_for_hover_text.append(hover_text)
             color.append(self.colores_random_por_string(acero_y_diamtro_string))
 
-
         self.fig.update_layout(shapes=shapes_list)
-
-
 
         self.fig.add_trace(go.Scatter(
             x=x_for_hover_text,
@@ -246,16 +244,18 @@ class PlotlyUtil(object):
         return go.Scatter(x=x, y=y, mode='lines',
                           line=dict(color=color, width=espesor, dash='solid'),
                           hoverinfo='skip',
+                          showlegend=False,
                           opacity=transparencia)
 
     @staticmethod
-    def plotly_segmento(nodo1, nodo2, color, espesor, transparencia):
+    def plotly_segmento(nodo1, nodo2, color, espesor, transparencia, **kwargs):
         x = [nodo1.x, nodo2.x]
         y = [nodo1.y, nodo2.y]
 
         return go.Scatter(x=x, y=y, mode='lines', line=dict(color=color, width=espesor, dash='solid'),
                           hoverinfo='skip',
-                          opacity=transparencia)
+                          opacity=transparencia,
+                          **kwargs)
 
     def plot_trapecio_circular(self, trapecio_circular, arc_division=100, color="Cyan", espesor=None, mostrar_centroide=False, transparencia=1.00):
         self.fig.add_trace(
@@ -269,7 +269,7 @@ class PlotlyUtil(object):
                             espesor,
                             transparencia))
 
-        # Plot internal arc if needed
+        # Plotear el arco interno (si hay)
         if trapecio_circular.radio_interno > 0:
             self.fig.add_trace(
                 self.plotly_arc(trapecio_circular.xc,
@@ -282,16 +282,17 @@ class PlotlyUtil(object):
                                 espesor,
                                 transparencia))
 
-        # Plot straight segments
+        # Segmentos rectos
         if trapecio_circular.segmentos_rectos is not None:
             for segmento in trapecio_circular.segmentos_rectos:
-                self.fig.add_trace(self.plotly_segmento(segmento.nodo_1, segmento.nodo_2, color, espesor, transparencia))
+                self.fig.add_trace(self.plotly_segmento(
+                    segmento.nodo_1, segmento.nodo_2, color, espesor, transparencia, showlegend=False))
 
-        # Plot centroid if required
+        # Centroide de los elementos
         if mostrar_centroide:
             self.fig.add_trace(
                 go.Scatter(x=[trapecio_circular.xg], y=[trapecio_circular.yg], mode='markers',
                            marker=dict(color=color, size=trapecio_circular.area / 300),
-                           opacity=transparencia))  # Adjust size as needed
+                           opacity=transparencia, showlegend=False))  # Adjust size as needed
 
-        self.fig.update_layout(showlegend=False)
+        self.fig.update_layout(showlegend=True)

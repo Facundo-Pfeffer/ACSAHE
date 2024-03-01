@@ -97,6 +97,7 @@ class ResolucionGeometrica:
         tipo = self.ingreso_datos_wb.get_value_on_the_right("Tipo", rows_range, 2)
         verificacion = self.ingreso_datos_wb.get_value_on_the_right("Verificación de Estados", rows_range, 2)
         resultados_en_wb = self.ingreso_datos_wb.get_value_on_the_right("Pegar resultados en planilla", rows_range, 2)
+        tratado_de_phi = self.ingreso_datos_wb.get_value_on_the_right("ϕ\nFactor de Minoración de Resistencia", rows_range, 2)
         self.obtener_planos_de_cargados(tipo, rows_range)
         puntos_a_verificar = self.obtener_puntos_a_verificar(tipo)
         self.lista_ang_plano_de_carga = list(self.lista_ang_plano_de_carga)
@@ -106,7 +107,20 @@ class ResolucionGeometrica:
             "resultados_en_wb": isinstance(resultados_en_wb, str) and resultados_en_wb == "Sí",
             "lista_planos_de_carga": list(self.lista_ang_plano_de_carga),
             "puntos_a_verificar": puntos_a_verificar,
+            "phi_variable": self.get_phi_variable(tratado_de_phi)
         }
+
+    @staticmethod
+    def get_phi_variable(tratado_de_phi):
+        try:
+            if isinstance(tratado_de_phi, str):
+                tratado_de_phi.replace(",", ".")
+            return float(tratado_de_phi)
+        except ValueError:
+            if isinstance(tratado_de_phi, str) and "VARIABLE" in tratado_de_phi.upper():
+                return True
+            raise Exception("Valor incorrecto en la celda 'Factor de Minoración de Resistencia'.\n"
+                            "Por favor, ingresar solo numeros o el valor predeterminado Variable según CIRSOC 205")
 
     def obtener_planos_de_cargados(self, tipo, rows_range):
         if tipo == "2D":
@@ -148,6 +162,8 @@ class ResolucionGeometrica:
                 }
                 self.agregar_ang(estado["plano_de_carga"])
             lista_estados.append(estado)
+        if tipo == "3D":
+            lista_estados = sorted(lista_estados, key=lambda x: x["plano_de_carga"])
         return lista_estados
 
     def cargar_propiedades_materiales(self):
@@ -639,7 +655,7 @@ class ResolucionGeometrica:
         y_mid = (self.seccion_H.y_max + self.seccion_H.y_min) / 2
 
         if not fig:
-            fig = go.Figure(layout_template="plotly_dark")
+            fig = go.Figure(layout_template="plotly_white")
         fig.update_yaxes(
             scaleanchor="x",
             scaleratio=1,
@@ -654,11 +670,15 @@ class ResolucionGeometrica:
             xaxis=dict(
                 title='<span style="font-size: 20px;">X</span><span style="font-size: 14px;"> baricéntrica</span><span style="font-size: 20px;"> [cm]</span>',
                 title_font=dict(family='Times New Roman'),
+                showticklabels=True, showgrid=True,
+                zeroline=True,
                 range=[x_mid - common_range / 2, x_mid + common_range / 2]
             ),
             yaxis=dict(
                 title='<span style="font-size: 20px;">Y</span><span style="font-size: 14px;"> baricéntrica</span><span style="font-size: 20px;"> [cm]</span>',
                 title_font=dict(family='Times New Roman', size=12),
+                zeroline=True,
+                showticklabels=True, showgrid=True,
                 range=[y_mid - common_range / 2, y_mid + common_range / 2]
             )
         )

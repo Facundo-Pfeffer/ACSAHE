@@ -26,7 +26,7 @@ class ExcelManager:
                 return column, row
         return None, None
 
-    def get_value_on_the_right(self, wanted_value, rows_range=default_rows_range_value, n_column=1):
+    def get_value_on_the_right(self, wanted_value, rows_range=default_rows_range_value, n_column=1, row_offset=0, column_offset=0):
         column_initial, search_row = self.find_cell_by_value(wanted_value, rows_range=rows_range)
         if not column_initial:
             return None
