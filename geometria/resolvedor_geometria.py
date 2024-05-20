@@ -153,12 +153,13 @@ class ResolucionGeometrica:
                     "M": self.ingreso_datos_wb.get_value("E", estado_fila),
                 }
             else:
+                plano_de_carga = self.ingreso_datos_wb.get_value("H", estado_fila)
                 estado = {
                     "nombre": self.ingreso_datos_wb.get_value("A", estado_fila),
                     "P": self.ingreso_datos_wb.get_value("C", estado_fila),
                     "Mx": self.ingreso_datos_wb.get_value("E", estado_fila),
                     "My": self.ingreso_datos_wb.get_value("G", estado_fila),
-                    "plano_de_carga": self.ingreso_datos_wb.get_value("H", estado_fila),
+                    "plano_de_carga": plano_de_carga if plano_de_carga is not None else 0  # se fuerza 0 para estado de solo esfuerzo normal, en el cual en rigor corresponde considerar infinitos planos de carga.
                 }
                 self.agregar_ang(estado["plano_de_carga"])
             lista_estados.append(estado)
@@ -716,7 +717,7 @@ class ResolucionGeometrica:
             self.diagrama_interaccion_wb.insert_values_vertically("I3", list_values, columns_to_clean=["I", "J", "K"], start_row=3)
 
             X = [x["M"] for x in lista_puntos_a_verificar]
-            Y = [-x["P"] for x in lista_puntos_a_verificar]
+            Y = [x["P"] for x in lista_puntos_a_verificar]
 
             puntos_a_verificar = np.array([Y, X]).transpose().tolist()
             self.diagrama_interaccion_wb.insert_values_vertically("N3", puntos_a_verificar, columns_to_clean=["N", "O"], start_row=3)

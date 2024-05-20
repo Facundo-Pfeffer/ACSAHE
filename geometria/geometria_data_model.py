@@ -710,8 +710,9 @@ class SeccionArbitraria(object):
         self.contornos_negativos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == -1]
         self.contornos_positivos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == 1]
         self.elementos = self.obtener_matriz_elementos_positivos()
-        self.area, self.xg, self.yg, self.Ix, self.Iy = self.obtener_baricentro_y_area()
+        self.area, self.xg, self.yg = self.obtener_baricentro_y_area()
         self.cambiar_coordenadas_a_baricentro()
+        self.Ix, self.Iy = self.calcular_inercias()
         self.x_min, self.x_max, self.y_min, self.y_max = self.obtener_valores_extremos()
 
     def obtener_matriz_elementos_positivos(self):
@@ -773,15 +774,19 @@ class SeccionArbitraria(object):
         area_total = 0
         sx = 0
         sy = 0
-        Ix = 0
-        Iy = 0
         for elemento in self.elementos:
             area_total = area_total + elemento.area
             sx = sx + elemento.area * elemento.xg
             sy = sy + elemento.area * elemento.yg
+        return round(area_total, 10), round(sx / area_total, 10), round(sy / area_total, 10)
+
+    def calcular_inercias(self):
+        Ix = 0
+        Iy = 0
+        for elemento in self.elementos:
             Ix = Ix + elemento.area * (elemento.yg**2)
             Iy = Iy + elemento.area * (elemento.xg**2)
-        return round(area_total, 10), round(sx / area_total, 10), round(sy / area_total, 10), int(Ix), int(Iy)
+        return round(Ix, 0), round(Iy, 0)
 
     def cambiar_coordenadas_a_baricentro(self):
         for elemento in self.elementos:

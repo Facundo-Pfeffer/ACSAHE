@@ -153,7 +153,9 @@ class ACSAHE(QWidget):
                         self.mensajes_progress_bar["Medio"].format(plano_de_carga=angulo_plano_de_carga))
                     QApplication.processEvents()
 
-                    solucion_parcial = DiagramaInteraccion2D(angulo_plano_de_carga, solucion_geometrica)
+                    solucion_parcial = DiagramaInteraccion2D(
+                        angulo_plano_de_carga if angulo_plano_de_carga != -1 else 0.00,
+                        solucion_geometrica)
 
                     coordenadas, lista_color_parcial, plano_de_def = solucion_geometrica.coordenadas_de_puntos_en_3d(
                         solucion_parcial.lista_resultados)
@@ -162,7 +164,8 @@ class ACSAHE(QWidget):
                     es_phi_constante = isinstance(solucion_geometrica.problema["phi_variable"], float)
                     if solucion_geometrica.problema["tipo"] == "3D":
                         texto = self.hover_text_3d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
-                                                   angulo_plano_de_carga, es_phi_constante)
+                                                   angulo_plano_de_carga,
+                                                   es_phi_constante)
                     else:
                         texto = self.hover_text_2d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
                                                    angulo_plano_de_carga, es_phi_constante)
@@ -188,6 +191,8 @@ class ACSAHE(QWidget):
                     self.update_message(self.mensajes_progress_bar["Ultimo"])
                     self.construir_resultado_html(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
                                                   lista_text_total, lista_color_total, data_subsets)
+        except Exception as e:
+            print(e)
         finally:
             mensaje_extra = self.obtener_mensaje_hoja_de_resultados(solucion_geometrica)
             self.update_message(f"ACSAHE ha finalizado!{mensaje_extra}")
@@ -225,7 +230,11 @@ class ACSAHE(QWidget):
                 open(self.icon_path_ico, 'rb') as icon_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_result_file:
                 acsahe = r.read()
-                graph_html = fig.to_html(full_html=False)
+
+                graph_html = fig.to_html(
+                    full_html=False,
+                    config=self.configuracion_descarga_imagen(
+                        file_name=f"ACSAHE - Resultado {solucion_geometrica.problema['tipo']}"))
 
                 logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO%20ACSAHE.webp"
                 encoded_icon_string = base64.b64encode(icon_file.read()).decode('utf-8')
@@ -235,15 +244,30 @@ class ACSAHE(QWidget):
                     main_css=main_css.read(),
                     noscript_css=noscript_css.read(),
                     ctrl_p_js=ctrl_p_js.read(),
-                    html_seccion=fig_seccion.to_html(full_html=False),
+                    html_seccion=fig_seccion.to_html(
+                        full_html=False,
+                        config=self.configuracion_descarga_imagen(
+                            file_name=f"ACSAHE - Sección")),
                     tabla_propiedades=self.propiedades_html(solucion_geometrica),
                     tabla_caracteristicas_materiales=self.caracteristicas_materiales_html(solucion_geometrica),
                     html_resultado=graph_html,
                     foto_logo=logo_path).encode("utf-8"))
                 tmp_file_path = tmp_result_file.name
 
+        fig.update_layout(autosize=True)
         # fig.show()
         webbrowser.open('file://' + tmp_file_path)
+
+    def configuracion_descarga_imagen(self, file_name="ACSAHE"):
+        return {
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': file_name,
+                'height': 800,
+                'width': 1000,
+                'scale': 9  # 1 por defecto, más implica mayor resolución
+            }
+        }
 
     @staticmethod
     def obtener_mensaje_hoja_de_resultados(solucion_geometrica):
@@ -371,6 +395,19 @@ class ACSAHE(QWidget):
 
     def print_3d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
                  lista_color_total, data_subsets):
+        plano_de_carga_lista = set(x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"])
+        plano_de_carga_lista = list(plano_de_carga_lista)
+        plano_de_carga_lista.sort()
+        estados_subsets = {}
+        for punto_a_verificar in solucion_geometrica.problema["puntos_a_verificar"]:
+            plano_de_carga = str(round(float(punto_a_verificar["plano_de_carga"]), 2))
+            if plano_de_carga not in estados_subsets:  # Inicialización
+                estados_subsets[plano_de_carga] = {"x": [], "y": [], "z": [], "nombre": []}
+            estados_subsets[plano_de_carga]["x"].append(punto_a_verificar["Mx"])
+            estados_subsets[plano_de_carga]["y"].append(punto_a_verificar["My"])
+            estados_subsets[plano_de_carga]["z"].append(punto_a_verificar["P"])
+            estados_subsets[plano_de_carga]["nombre"].append(punto_a_verificar["nombre"])
+
         X = [x["Mx"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         Y = [x["My"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         Z = [x["P"] for x in
@@ -379,17 +416,6 @@ class ACSAHE(QWidget):
 
         plano_de_carga_lista = [x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         plano_de_carga_lista.sort()
-        estados_subsets = {}
-
-        for i, plano_de_carga in enumerate(plano_de_carga_lista):
-            plano_de_carga = str(plano_de_carga)
-            if plano_de_carga not in estados_subsets:
-                estados_subsets[plano_de_carga] = {"x": [], "y": [], "z": [], "nombre": []}
-
-            estados_subsets[plano_de_carga]["x"].append(X[i])
-            estados_subsets[plano_de_carga]["y"].append(Y[i])
-            estados_subsets[plano_de_carga]["z"].append(Z[i])
-            estados_subsets[plano_de_carga]["nombre"].append(NOMBRE[i])
 
         fig = go.Figure(layout_template="plotly_white")
         fig.add_trace(go.Scatter3d(
@@ -513,7 +539,7 @@ class ACSAHE(QWidget):
 
         fig.update_layout(
             title=dict(
-                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción para λ={list(data_subsets.keys())[0]} °</span><br><span style="font-size: 20px;">Archivo: {self.file_name}</span>',
+                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción para λ={list(data_subsets.keys())[0]} °</span><br>',
                 # text=f"<b>ACSAHEArchivo: {self.file_name}</b>",
                 x=0.5,
                 font=dict(
