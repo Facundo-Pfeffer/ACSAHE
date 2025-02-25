@@ -5,8 +5,8 @@ ACSAHE es un programa dedicado a la elaboración de Diagramas de Interacción Mo
 Fue desarrollado por Facundo L. Pfeffer en conjunto con el Dr. Ing. Oscar Möller en el Instituto de Mecánica Aplicada y Estructuas (IMAE) de la de la Universidad Nacional de Rosario.
 ## Instalación
 
-Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado. Enlace de descarga:
-https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/view?usp=drivesdk 
+Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado. 
+**Enlace de descarga:** https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
 
 ## Tutoriales
 Para lograr un mejor entendimiento por los usuarios y aprendizaje del software, se ha creado un canal de YouTube en el cual se adicionaran progresivamente tutoriales explicativos.
