@@ -15,7 +15,7 @@ lista_espesores = [x / 5 for x in range(10, 20)]
 
 
 class Nodo(object):
-    def __init__(self, x: (int, float), y: (int, float)):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
 
@@ -86,7 +86,7 @@ class Segmento(object):
             ax.plot([self.nodo_1.x, self.nodo_2.x], [self.nodo_1.y, self.nodo_2.y], **kwargs)
 
     def __and__(self, otro_segmento):
-        result = self.recta_segmento & otro_segmento.recta_segmento  # Buscando interseccion
+        result = self.recta_segmento & otro_segmento.recta_segmento  # Buscando intersección.
         if not result:
             return None
         return result if self.determinar_si_nodo_esta_en_rango(
@@ -168,7 +168,7 @@ class Poligono(object):
 
     @staticmethod
     def ordenar_nodos_poligono_convexo_antihorario(nodos=None):
-        """Ordena los nodos en sentido antihorario, cuando el polígono SEA CONVEXO."""
+        """Ordena los nodos en sentido antihorario, cuando el polígono SEA CONVEXO (requisito)."""
         if nodos is None:
             return None
         x_array = np.array([nodo.x for nodo in nodos])

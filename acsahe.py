@@ -22,23 +22,23 @@ def show_message(message, titulo="Mensaje"):
 
 
 class ACSAHE(QWidget):
-    mensajes_progress_bar = {
+    progress_bar_messages = {
         "Inicio": "Geometría completada."
                   " Construyendo diagrama de interacción para plano de carga λ={plano_de_carga}° ...",
         "Medio": "Construyendo diagrama de interacción para plano de carga λ={plano_de_carga}° ...",
         "Ultimo": "Construyendo resultados ..."}
 
-    def __init__(self, app, file_name, path_to_file):
+    def __init__(self, app_gui, nombre_del_archivo, path_archivo):
         super().__init__()
-        self.file_name = file_name
+        self.file_name = nombre_del_archivo
         self.data_subsets = {}
         self.solucion_geometrica = None
-        self.path_to_file = path_to_file
-        self.app = app
-        self.initUI()
+        self.path_to_file = path_archivo
+        self.app = app_gui
+        self.ejecutar_acsahe()
         self.close()
 
-    def initUI(self):
+    def ejecutar_acsahe(self):
         self.setWindowTitle("ACSAHE")
         logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO ACSAHE.webp"
         icon_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo H.webp"
@@ -137,7 +137,7 @@ class ACSAHE(QWidget):
         try:
             self.steps = 2 + len(lista_ang)
             time.sleep(1)
-            self.update_message(self.mensajes_progress_bar["Inicio"].format(
+            self.update_message(self.progress_bar_messages["Inicio"].format(
                 plano_de_carga=lista_ang[0]))
             self.update_progress_bar(int(10))
             # self.step_length = 100 / self.steps
@@ -150,7 +150,7 @@ class ACSAHE(QWidget):
                 if step < 2 + len(lista_ang):
                     angulo_plano_de_carga = lista_ang[step - 2]
                     self.update_message(
-                        self.mensajes_progress_bar["Medio"].format(plano_de_carga=angulo_plano_de_carga))
+                        self.progress_bar_messages["Medio"].format(plano_de_carga=angulo_plano_de_carga))
                     QApplication.processEvents()
 
                     solucion_parcial = DiagramaInteraccion2D(
@@ -188,7 +188,7 @@ class ACSAHE(QWidget):
                     self.update_progress_bar(int(step / self.steps * 100))
                 else:
                     self.update_progress_bar(int(step / self.steps * 100))
-                    self.update_message(self.mensajes_progress_bar["Ultimo"])
+                    self.update_message(self.progress_bar_messages["Ultimo"])
                     self.construir_resultado_html(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
                                                   lista_text_total, lista_color_total, data_subsets)
         except Exception as e:

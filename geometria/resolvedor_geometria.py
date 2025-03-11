@@ -25,6 +25,7 @@ def show_message(message, titulo="Mensaje"):
 class ResolucionGeometrica:
     #  Cantidades de partes en las cuales se divide
     niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 30, "Fina": 50, "Muy Fina": 100}
+    #  Los niveles de discretizacion: ([parámetro en función logaritmica (ver ],
     niveles_mallado_circular = {"Muy Gruesa": (3, 45), "Gruesa": (6, 30), "Media": (12, 10),
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
 
@@ -35,7 +36,6 @@ class ResolucionGeometrica:
         self.file_name = file_path
         try:
             self.cargar_hojas_de_calculo()
-
             self.problema = self.obtener_problema_a_resolver()
 
             self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
@@ -72,6 +72,7 @@ class ResolucionGeometrica:
         # self.mostrar_resultado(blanco_y_negro=False)
 
     def cargar_hojas_de_calculo(self):
+        """Abre (inicializa) las hojas de cálculo."""
         self.ingreso_datos_wb = ExcelManager(self.file_name, "Ingreso de Datos")
         self.armaduras_pasivas_wb = ExcelManager(self.file_name, "Armaduras Pasivas")
         self.armaduras_activas_wb = ExcelManager(self.file_name, "Armaduras Activas")
@@ -180,7 +181,8 @@ class ResolucionGeometrica:
         self.setear_propiedades_acero_activo(def_de_pretensado_inicial)
 
     def obtener_plano_deformación_inicial_pretensado(self):
-        """Obtiene los parámetros del plano de deformación elástica inicial del hormigón, a partir de la acción del
+        """Obtiene los parámetros del plano de deformación elástica inicial del
+        hormigón, a partir de la acción del
         pretensado sobre dicha sección."""
         if not self.EAP:  # Caso de Hormigón Armado
             return 0, 0, 0
@@ -189,6 +191,7 @@ class ResolucionGeometrica:
             [-BarraAceroPretensado.deformacion_de_pretensado_inicial, 0, 0],
             maxfev=50,
             full_output=1)
+
         if not (resultado[2]):
             raise Exception("No se encontró deformación inicial que satisfaga las ecuaciones de equilibrio")
         ec, phix, phiy = resultado[0]
@@ -270,11 +273,8 @@ class ResolucionGeometrica:
     def mostrar_plano_de_carga_y_ejes(self, ax):
         self.angulo_plano_de_carga_esperado = self.lista_ang_plano_de_carga[0]
         axis_color = "blue"
-
         x1, x2, y1, y2 = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG, self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
-
         x1p, y1p, x2p, y2p = self.plano_de_carga()
-
         linea_plano_de_carga = Segmento(Nodo(x1p, y1p),
                                         Nodo(x2p, y2p))
         linea_plano_de_carga.plot(linewidth=3, c="k", linestyle="dashed")
@@ -442,11 +442,6 @@ class ResolucionGeometrica:
                     raise Exception("Usted ha seleccionado Acero Pasivo tipo 'Provisto por usuario'\n"
                                     "Pero no ha ingresado todos los parámetros necesarios. Por favor,"
                                     " diríjase a pestaña 'Armaduras Pasivas' e intentelo de nuevo.")
-
-                for k, v in valores.items():
-                    if k in ("fy", "E"):
-                        v = v / 10  # kN/cm²
-                    setattr(BarraAceroPasivo, k, v)
 
             else:
                 values = BarraAceroPasivo.tipos_de_acero_y_valores.get(tipo)
