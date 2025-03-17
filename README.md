@@ -12,7 +12,7 @@ Juan Romaris. ¡Gracias por colaborar!
 ## Tutoriales
 Para lograr un mejor entendimiento por los usuarios y aprendizaje del software, se ha creado un canal de YouTube en el cual se adicionaran progresivamente tutoriales explicativos.  https://www.youtube.com/playlist?list=PL2vqHDQzjyupe7ISb2vA9EGn0Qr31nW7g
 
-💻 Featured YouTube Videos
+## 💻 Featured YouTube Videos
 [![Tips and advice for Computer Science students](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=PRESENTACIÓN+ARGENTINA+EN+COLEIC+PANAMÁ:+GANADORA+DEL+PRIMER+PUESTO+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "PRESENTACIÓN ARGENTINA EN COLEIC PANAMÁ: GANADORA DEL PRIMER PUESTO - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
 
 ## Bibliografía
