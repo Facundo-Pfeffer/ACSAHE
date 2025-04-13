@@ -2,7 +2,8 @@ import colorsys
 import logging
 import traceback
 from tkinter import messagebox
-
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import matplotlib.pyplot as plt
 import math
@@ -10,7 +11,8 @@ import numpy as np
 from scipy.optimize import fsolve
 
 
-from geometria.resolvedor_geometria import ResolucionGeometrica
+from functools import lru_cache
+from geometry.section_analysis import ResolucionGeometrica
 
 
 diferencia_admisible = 0.5
@@ -21,11 +23,14 @@ def show_message(message, titulo="Mensaje"):
 
 
 class DiagramaInteraccion2D:
+
     def __init__(self, angulo_plano_de_carga, solucion_geometrica: ResolucionGeometrica):
         self.geometria = solucion_geometrica
-        self.medir_diferencias = []
+        self.concrete_element_array = self.get_concrete_element_array()
+        self.rebar_array = self.get_rebar_array()
+        self.prestressed_reinforcement_array = self.get_prestressed_reinforcement_array()
         self.angulo_plano_de_carga_esperado = angulo_plano_de_carga
-        self.phi_variable = solucion_geometrica.problema["phi_variable"]
+        self.phi_minoriacion_resistencia = solucion_geometrica.problema["phi_variable"]
         try:
             self.lista_planos_sin_solucion = []
             self.lista_resultados = self.iterar()
@@ -36,55 +41,74 @@ class DiagramaInteraccion2D:
         finally:
             logging.log(1, "Se terminó la ejecución")
 
+    def get_concrete_element_array(self):
+        return np.array([
+            (element.xg, element.yg, element.area, 0.0, 0.0) for element in self.geometria.EEH],
+            dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float), ('strain', float)])
+
+    def get_rebar_array(self):
+        return np.array([
+            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.relacion_constitutiva) for rebar in self.geometria.EA],
+            dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
+                   ('strain', float), ('relacion_constitutiva', object)])
+
+    def get_prestressed_reinforcement_array(self):
+        return np.array([
+            (rebar.xg, rebar.yg, rebar.area, 0.0,
+             0.0, rebar.def_elastica_hormigon_perdidas, rebar.deformacion_de_pretensado_inicial, 0.0,
+             rebar.relacion_constitutiva) for rebar in self.geometria.EAP],
+            dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
+                   ('flexural_strain', float), ('concrete_shortening_strain', float), ('effective_strain', float), ('total_strain', float),
+                   ('relacion_constitutiva', object)
+                   ])
+
     def iterar(self):
-        """Método principal para la obtención de los diagramas de interacción.
-        Se itera en la inclinación del eje neutro para cada plano de deformación límite planteado.
-        Pudiendo obtenerse (o no) 1 punto en el diagrama de interacción por cada plano límite."""
+        """Método principal para la obtención de los diagramas de interacción."""
         lista_de_puntos = []
         try:
-            for plano_de_deformacion in self.geometria.planos_de_deformacion:
-                sol = fsolve(self.evaluar_diferencia_para_inc_eje_neutro,
-                             x0=-self.angulo_plano_de_carga_esperado,  # Estimación inicial como si fuese flexión recta
-                             xtol=0.005,
-                             args=plano_de_deformacion,
-                             full_output=1,
-                             maxfev=50)  # Max fev = número de iteraciones máximo
-                theta, diferencia_plano_de_carga, sol_encontrada = sol[0][0], sol[1]['fvec'], sol[2] == 1
-                # test = self.evaluar_diferencia_para_inc_eje_neutro(theta, *plano_de_deformacion)
-                self.medir_diferencias.append((diferencia_plano_de_carga, plano_de_deformacion))
-                if sol_encontrada is True and abs(diferencia_plano_de_carga) < diferencia_admisible:
-                    sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
-                    lista_de_puntos.append(
-                        {"sumF": sumF,
-                         "M": self.obtener_momento_resultante(Mx, My),
-                         "plano_de_deformacion": plano_de_deformacion,
-                         "color": self.numero_a_color_arcoiris(abs(plano_de_deformacion[3])),
-                         "phi": phi,
-                         "Mx": Mx,
-                         "My": My
-                         })
+            with ThreadPoolExecutor(max_workers=int(os.cpu_count())) as executor:
+                futures = [executor.submit(self.resolver_plano, plano) for plano in
+                           self.geometria.planos_de_deformacion]
+                for future in as_completed(futures):
+                    resultado = future.result()
+                    if resultado is not None:
+                        lista_de_puntos.append(resultado)
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+        return lista_de_puntos
 
-                else:  # Punto Descartado, no se encontró solución.
-                    self.lista_planos_sin_solucion.append((plano_de_deformacion, sol))
+    def resolver_plano(self, plano_de_deformacion):
+        try:
+            sol = fsolve(
+                self.evaluar_diferencia_para_inc_eje_neutro,
+                x0=-self.angulo_plano_de_carga_esperado,
+                xtol=0.005,  # ~20 seconds.
+                args=plano_de_deformacion,
+                full_output=1,
+                maxfev=50
+            )
+            theta, diferencia, success = sol[0][0], sol[1]['fvec'], sol[2] == 1
+            theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
+            if success and abs(diferencia) < diferencia_admisible:
+                sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
+                return {
+                    "sumF": sumF,
+                    "M": self.obtener_momento_resultante(Mx, My),
+                    "plano_de_deformacion": plano_de_deformacion,
+                    "color": self.numero_a_color_arcoiris(abs(plano_de_deformacion[3])),
+                    "phi": phi,
+                    "Mx": Mx,
+                    "My": My
+                }
+            else:  # Used only for debugging solution-less points
+                pass
         except Exception as e:
             traceback.print_exc()
             print(e)
 
-        return lista_de_puntos
-
-    def obtener_resultante_para_theta_y_def(self, theta, *plano_de_deformacion):
-        EEH_girado, EA_girado, EAP_girado = self.calculo_distancia_eje_neutro_de_elementos(theta)
-        EEH_girado.sort(key=lambda elemento_h: elemento_h.y_girado)
-        EA_girado.sort(key=lambda elemento_a: elemento_a.y_girado)
-        EAP_girado.sort(key=lambda elemento_ap: elemento_ap.y_girado)
-        ecuacion_plano_deformacion = self.obtener_ecuacion_plano_deformacion(EEH_girado, EA_girado, EAP_girado,
-                                                                             plano_de_deformacion)
-        sumF, Mx, My, phi = self.calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(EEH_girado, EA_girado,
-                                                                                           EAP_girado,
-                                                                                           ecuacion_plano_deformacion)
-        return sumF, Mx, My, phi
-
     def evaluar_diferencia_para_inc_eje_neutro(self, theta, *plano_de_deformacion):
+        theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
         sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
         ex = round(My / sumF, 5)
         ey = round(Mx / sumF, 5)
@@ -100,6 +124,38 @@ class DiagramaInteraccion2D:
         # la función scipy.fsolve se traba cuando obtiene el mismo resultado sucesivas veces, por lo que toma válida
         return diferencia
 
+    def calculo_distancia_eje_neutro_de_elementos(self, theta_rad):
+        sin_theta, cos_theta = self.sincos_cached(theta_rad)
+
+        concrete_rotated = self.concrete_element_array.copy()
+        rebar_rotated = self.rebar_array.copy()
+        prestressed_rotated = self.prestressed_reinforcement_array.copy()
+
+        concrete_rotated["neutral_axis_distance"] = -concrete_rotated['xg'] * sin_theta + concrete_rotated[
+            'yg'] * cos_theta
+        rebar_rotated["neutral_axis_distance"] = -rebar_rotated['xg'] * sin_theta + rebar_rotated['yg'] * cos_theta
+        prestressed_rotated["neutral_axis_distance"] = -prestressed_rotated['xg'] * sin_theta + prestressed_rotated[
+            'yg'] * cos_theta
+
+        return concrete_rotated, rebar_rotated, prestressed_rotated
+
+    @staticmethod
+    @lru_cache(maxsize=512)
+    def sincos_cached(theta_rad):
+        return np.sin(theta_rad), np.cos(theta_rad)
+
+    @lru_cache(maxsize=1024)
+    def obtener_resultante_para_theta_y_def(self, theta, *plano_de_deformacion):
+        rot_concrete_array, rot_rebar_array, rot_prestressed_array = self.calculo_distancia_eje_neutro_de_elementos(theta)
+        rot_concrete_array.sort(order="neutral_axis_distance")
+        rot_rebar_array.sort(order="neutral_axis_distance")
+        rot_prestressed_array.sort(order="neutral_axis_distance")
+        ecuacion_plano_deformacion = self.obtener_ecuacion_plano_deformacion(
+            rot_concrete_array, rot_rebar_array, rot_prestressed_array, plano_de_deformacion)
+        sumF, Mx, My, phi = self.calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
+            rot_concrete_array, rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion)
+        return sumF, Mx, My, phi
+
     @staticmethod
     def obtener_momento_resultante(Mx, My):
         return (1 if Mx >= 0 else -1) * math.sqrt(Mx ** 2 + My ** 2)
@@ -111,121 +167,129 @@ class DiagramaInteraccion2D:
             return 0
         return angulo_x if angulo_x >= 0 else angulo_x + 180  # Para que se encuentre comprendido en el rango [0, 180]
 
-    def obtener_ecuacion_plano_deformacion(self, EEH_girado, EA_girado, EAP_girado, plano_de_deformacion):
-        """Construye la ecuación de una recta que pasa por los puntos (y_positivo,def_1) (y_negativo,def_2).
-        Y_positivo e y_negativo serán la distancia al eje neutro del elemento de hormigón más comprimido, o
-        de la barra de acero (pasivo o activo) más traicionada. Lo positivo o negativo depende de qué lado del
-        eje neutro se encuentra el análisis."""
+    def obtener_ecuacion_plano_deformacion(self, rot_concrete_array, rot_rebar_array, rot_prestressed_array,
+                                           plano_de_deformacion):
         def_1, def_2 = plano_de_deformacion[0], plano_de_deformacion[1]
-        y_positivo = self.obtener_y_determinante_positivo(def_1, EA_girado, EAP_girado, EEH_girado)
-        y_negativo = self.obtener_y_determinante_negativo(def_2, EA_girado, EAP_girado, EEH_girado)
+        y_positivo = self.obtener_y_determinante_positivo(def_1, rot_rebar_array, rot_prestressed_array,
+                                                          rot_concrete_array)
+        y_negativo = self.obtener_y_determinante_negativo(def_2, rot_rebar_array, rot_prestressed_array,
+                                                          rot_concrete_array)
+
         if y_positivo == y_negativo and def_1 == def_2:
-            return lambda y_girado: def_1
+            return lambda y: def_1
+
         A = (def_1 - def_2) / (y_positivo - y_negativo)
         B = def_2 - A * y_negativo
-        return lambda y_girado: y_girado * A + B
+        return lambda rotated_y: rotated_y * A + B
 
-    def obtener_y_determinante_positivo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
-        """Lo positivo indíca que se encuentra con coordendas y_girado positívas (de un lado del eje neutro)"""
-        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:  # Compresión
-            return EEH_girado[-1].y_girado  # Fibra de Hormigón más alejada
-        lista_de_armaduras = []
-        lista_de_armaduras.extend(EA_girado)
-        lista_de_armaduras.extend(EAP_girado)
-        return max(x.y_girado for x in lista_de_armaduras)  # Armadura más traccionada (más alejada del EN)
-
-    def obtener_y_determinante_negativo(self, def_extrema, EA_girado, EAP_girado, EEH_girado):
-        """Lo negativo indíca que se encuentra con coordenadas y_girado negatívas (de un lado del eje neutro)"""
+    def obtener_y_determinante_positivo(self, def_extrema, rebar_array, prestressed_array, concrete_array):
         if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:
-            return EEH_girado[0].y_girado  # Maxima fibra comprimida hormigón
+            return concrete_array["neutral_axis_distance"][-1]  # Most compressed concrete fiber
 
-        lista_de_armaduras = []
-        lista_de_armaduras.extend(EA_girado)
-        lista_de_armaduras.extend(EAP_girado)
-        return min(x.y_girado for x in lista_de_armaduras)  # Armadura más traccionada (más alejada del EN)
+        neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
+        return np.max(neutral_axis_distances)  # Most distant (traction) steel fiber
 
-    def calculo_distancia_eje_neutro_de_elementos(self, theta):
-        EEH_girado, EA_girado, EAP_girado = self.geometria.EEH.copy(), self.geometria.EA.copy(), self.geometria.EAP.copy()
-        for elemento_hormigon in EEH_girado:
-            elemento_hormigon.y_girado = self.distancia_eje_rotado(elemento_hormigon, angulo=theta)
-        for elemento_acero in EA_girado:
-            elemento_acero.y_girado = self.distancia_eje_rotado(elemento_acero, angulo=theta)
-        for elemento_acero_p in EAP_girado:
-            elemento_acero_p.y_girado = self.distancia_eje_rotado(elemento_acero_p, angulo=theta)
-        return EEH_girado, EA_girado, EAP_girado
+    def obtener_y_determinante_negativo(self, def_extrema, rebar_array, prestressed_array, concrete_array):
+        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:
+            return concrete_array["neutral_axis_distance"][0]  # Distance to compressed concrete fiber.
 
-    def distancia_eje_rotado(self, elemento, angulo):
-        angulo_rad = math.radians(angulo[0] if type(
-            angulo) == np.ndarray else angulo)  # Transformación interna, por las librerías utilizadas.
-        value = -elemento.xg * math.sin(angulo_rad) + elemento.yg * math.cos(angulo_rad)
-        return value
+        neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
+        return np.min(neutral_axis_distances)  # Most distant (traction) steel fiber
 
-    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(self, EEH_girado, EA_girado, EAP_girado,
-                                                                  ecuacion_plano_deformacion):
+    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
+            self, rot_concrete_array, rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion):
 
-        y_max, y_min = EEH_girado[-1].y_girado, EEH_girado[0].y_girado
-        sumFA = sumFP = sumFH = 0
-        MxA = MxAP = MxH = 0
-        MyA = MyAP = MyH = 0
-        e1, e2 = ecuacion_plano_deformacion(y_max), ecuacion_plano_deformacion(y_min)
+        # -------------------- 1. Compute flexural strain fields --------------------
+        rot_concrete_array['strain'] = ecuacion_plano_deformacion(rot_concrete_array["neutral_axis_distance"])
+        rot_rebar_array['strain'] = ecuacion_plano_deformacion(rot_rebar_array["neutral_axis_distance"])
+        rot_prestressed_array['flexural_strain'] = ecuacion_plano_deformacion(
+            rot_prestressed_array["neutral_axis_distance"])
 
-        def_max_comp = min(e1, e2)
 
-        for barra in EA_girado:
-            dist_eje_neutro, def_elemento, area = barra.y_girado, ecuacion_plano_deformacion(barra.y_girado), barra.area
-            FA = barra.relacion_constitutiva(def_elemento) * area
-            sumFA = sumFA + FA
-            MxA = FA * barra.yg + MxA
-            MyA = -FA * barra.xg + MyA
+        # -------------------- 2. Concrete --------------------
+        def_max_comp = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
+        fuerzas_concreto = np.array([
+            self.geometria.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=def_max_comp) * a
+            for e, a in zip(rot_concrete_array['strain'], rot_concrete_array['area'])
+        ])
+        sumFH = np.sum(fuerzas_concreto)
+        MxH = np.sum(fuerzas_concreto * rot_concrete_array['yg'])
+        MyH = np.sum(-fuerzas_concreto * rot_concrete_array['xg'])
 
-        for barra_p in EAP_girado:
-            dist_eje_neutro, deformacion_neta, area = barra_p.y_girado, ecuacion_plano_deformacion(
-                barra_p.y_girado), barra_p.area
-            deformacion_hormigon = barra_p.def_elastica_hormigon_perdidas
-            deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
-            deformacion_total = deformacion_neta + deformacion_hormigon + deformacion_pretensado_inicial
+        # -------------------- 3. Passive Rebar --------------------
+        fuerzas_rebar = np.array([
+            rel(e) * a for rel, e, a in zip(
+                rot_rebar_array['relacion_constitutiva'],
+                rot_rebar_array['strain'],
+                rot_rebar_array['area']
+            )
+        ])
+        sumFA = np.sum(fuerzas_rebar)
+        MxA = np.sum(fuerzas_rebar * rot_rebar_array['yg'])
+        MyA = np.sum(-fuerzas_rebar * rot_rebar_array['xg'])
 
-            Fp = barra_p.relacion_constitutiva(deformacion_total) * area
-            sumFP = sumFP + Fp
-            MxAP = Fp * barra_p.yg + MxAP
-            MyAP = -Fp * barra_p.xg + MyAP
+        # -------------------- 4. Prestressed Rebar --------------------
+        # Shortening and prestress already defined — total strain
+        rot_prestressed_array['total_strain'] = (
+                rot_prestressed_array['flexural_strain'] +
+                rot_prestressed_array['concrete_shortening_strain'] +
+                rot_prestressed_array['effective_strain']
+        )
 
-        for elemento in EEH_girado:
-            def_elemento, area = ecuacion_plano_deformacion(elemento.y_girado), elemento.area
-            F_hor = self.geometria.hormigon.relacion_constitutiva_simplificada(
-                def_elemento, e_max_comp=def_max_comp) * area
-            sumFH = sumFH + F_hor
-            MxH = F_hor * elemento.yg + MxH
-            MyH = -F_hor * elemento.xg + MyH
+        fuerzas_prestressed = np.array([
+            rel(e) * a for rel, e, a in zip(
+                rot_prestressed_array['relacion_constitutiva'],
+                rot_prestressed_array['total_strain'],
+                rot_prestressed_array['area']
+            )
+        ])
+        sumFP = np.sum(fuerzas_prestressed)
+        MxAP = np.sum(fuerzas_prestressed * rot_prestressed_array['yg'])
+        MyAP = np.sum(-fuerzas_prestressed * rot_prestressed_array['xg'])
 
-        factor_minoracion_de_resistencia = self.obtener_factor_minoracion_de_resistencia(
-            EA_girado, EAP_girado, ecuacion_plano_deformacion, self.geometria.tipo_estribo)
+        # -------------------- 5. Strength Reduction Factor --------------------
+        phi = self.obtener_factor_minoracion_de_resistencia(
+            rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion, self.geometria.tipo_estribo
+        )
 
-        sumF = sumFA + sumFP + sumFH
-        Mx = round(MxA + MxAP + MxH, 8)
-        My = round(MyA + MyAP + MyH, 8)
+        # -------------------- 6. Totals --------------------
+        sumF = phi * (sumFA + sumFP + sumFH)
+        Mx = round(phi * (MxA + MxAP + MxH), 8)
+        My = round(phi * (MyA + MyAP + MyH), 8)
 
-        sumF = factor_minoracion_de_resistencia * sumF
-        Mx = factor_minoracion_de_resistencia * Mx
-        My = factor_minoracion_de_resistencia * My
-        return sumF, Mx, My, factor_minoracion_de_resistencia
+        return sumF, Mx, My, phi
 
-    def obtener_factor_minoracion_de_resistencia(self, EA_girado, EAP_girado, ecuacion_plano_de_def, tipo_estribo):
-        if isinstance(self.phi_variable, float):
-            phi_constante = self.phi_variable
-            return phi_constante
+    def obtener_factor_minoracion_de_resistencia(self, rot_rebar_array, rot_prestressed_array, ecuacion_plano_de_def,
+                                                 tipo_estribo):
+        # Manual override
+        if isinstance(self.phi_minoriacion_resistencia, float):
+            return self.phi_minoriacion_resistencia
+
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
-        if len(EA_girado) == 0 and len(EAP_girado) == 0:  # Hormigón Simple
-            return 0.55
-        lista_def_girado = [ecuacion_plano_de_def(barra.y_girado) for barra in EA_girado + EAP_girado]
-        y_girado_max = max(lista_def_girado)
-        if y_girado_max >= 5 / 1000:
+
+        if len(rot_rebar_array) == 0 and len(rot_prestressed_array) == 0:
+            return 0.55  # Hormigón simple
+
+        # Concatenate distances from both arrays
+        all_neutral_axis_distances = np.concatenate([
+            rot_rebar_array["neutral_axis_distance"],
+            rot_prestressed_array["neutral_axis_distance"]
+        ])
+
+        # Compute strains from deformation plane
+        all_strains = ecuacion_plano_de_def(all_neutral_axis_distances)
+        max_strain = np.max(all_strains)
+
+        # Interpolation logic
+        if max_strain >= 0.005:
             return 0.9
-        elif y_girado_max < 2 / 1000:
+        elif max_strain < 0.002:
             return phi_min
         else:
-            return phi_min * (0.005 - y_girado_max) / 0.003 + 0.9 * (
-                    y_girado_max - 0.002) / 0.003  # Interpolación lineal
+            return (
+                    phi_min * (0.005 - max_strain) / 0.003 +
+                    0.9 * (max_strain - 0.002) / 0.003
+            )
 
     @staticmethod
     def numero_a_color_arcoiris(numero):

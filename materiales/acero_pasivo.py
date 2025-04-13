@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import math
+from functools import lru_cache
 
 
 class BarraAceroPasivo():
@@ -26,6 +27,7 @@ class BarraAceroPasivo():
         self.area = math.pi*(d/20)**2  # cm²
         self.y_girado = None
 
+    @lru_cache(maxsize=512)
     def relacion_constitutiva(self, e):
         """Relación bilineal."""
         if abs(e) > self.ey:

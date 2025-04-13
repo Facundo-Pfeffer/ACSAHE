@@ -12,7 +12,7 @@ from scipy.optimize import fsolve
 from materiales.acero_pasivo import BarraAceroPasivo
 from materiales.acero_pretensado import BarraAceroPretensado
 from build.ext_utils.excel_manager import ExcelManager
-from geometria.geometria_data_model import Nodo, Contorno, SeccionArbitraria, Segmento, ContornoCircular
+from geometry.section_geometry_engine import Node, Contorno, SeccionArbitraria, Segment, ContornoCircular
 from materiales.hormigon import Hormigon
 from materiales.matrices import MatrizAceroPasivo, MatrizAceroActivo
 from build.ext_utils.plotly_util import PlotlyUtil
@@ -35,41 +35,46 @@ class ResolucionGeometrica:
         self.lista_ang_plano_de_carga = set()
         self.file_name = file_path
         try:
-            self.cargar_hojas_de_calculo()
-            self.problema = self.obtener_problema_a_resolver()
-
-            self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
-            self.cargar_propiedades_materiales()
-
-            self.seccion_H = self.obtener_matriz_hormigon()
-
-            self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
-
-            self.EEH = self.seccion_H.elementos  # Matriz Hormigón
-            self.EA = self.obtener_matriz_acero_pasivo()
-            self.EAP = self.obtener_matriz_acero_pretensado()
-
-            self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
-            self.planos_de_deformacion = self.obtener_planos_de_deformacion()
-
-            self.ec, self.phix, self.phiy = self.obtener_plano_deformación_inicial_pretensado()
-            # self.print_result_tridimensional(ec, phix, phiy)
-            self.ec_plano_deformacion_elastica_inicial = lambda x, y: self.ec + math.tan(math.radians(self.phix)) * (
-                y) + math.tan(
-                math.radians(self.phiy)) * x
-            self.asignar_deformacion_hormigon_a_elementos_pretensados()
-            if self.problema["tipo"] == "2D":
-                self.construir_grafica_seccion()
-
+            self.build()
         except Exception as e:
             traceback.print_exc()
             message = f"Error en la generación de la geometría:\n{e}"
             show_message(message)
             raise e
+        finally:
+            for work_sheet in [work_sheet for work_sheet in [self.ingreso_datos_wb, self.armaduras_pasivas_wb, self.armaduras_activas_wb, self.diagrama_interaccion_wb, self.diagrama_interaccion_3D_wb]if work_sheet is not None] :
+                work_sheet.close()
 
         # self.medir_diferencias.sort(reverse=True)
         # print(self.medir_diferencias)
         # self.mostrar_resultado(blanco_y_negro=False)
+
+    def build(self):
+        self.cargar_hojas_de_calculo()
+        self.problema = self.obtener_problema_a_resolver()
+
+        self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
+        self.cargar_propiedades_materiales()
+
+        self.seccion_H = self.obtener_matriz_hormigon()
+
+        self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
+
+        self.EEH = self.seccion_H.elementos  # Matriz Hormigón
+        self.EA = self.obtener_matriz_acero_pasivo()
+        self.EAP = self.obtener_matriz_acero_pretensado()
+
+        self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
+        self.planos_de_deformacion = self.obtener_planos_de_deformacion()
+
+        self.ec, self.phix, self.phiy = self.obtener_plano_deformación_inicial_pretensado()
+        # self.print_result_tridimensional(ec, phix, phiy)
+        self.ec_plano_deformacion_elastica_inicial = lambda x, y: self.ec + math.tan(math.radians(self.phix)) * (
+            y) + math.tan(
+            math.radians(self.phiy)) * x
+        self.asignar_deformacion_hormigon_a_elementos_pretensados()
+        if self.problema["tipo"] == "2D":
+            self.construir_grafica_seccion()
 
     def cargar_hojas_de_calculo(self):
         """Abre (inicializa) las hojas de cálculo."""
@@ -78,13 +83,6 @@ class ResolucionGeometrica:
         self.armaduras_activas_wb = ExcelManager(self.file_name, "Armaduras Activas")
         self.diagrama_interaccion_wb = ExcelManager(self.file_name, "Resultados 2D")
         self.diagrama_interaccion_3D_wb = ExcelManager(self.file_name, "Resultados 3D")
-
-    def cerrar_hojas_de_calculo(self):
-        self.ingreso_datos_wb.close()
-        self.armaduras_pasivas_wb.close()
-        self.armaduras_activas_wb.close()
-        self.diagrama_interaccion_wb.close()
-        self.diagrama_interaccion_3D_wb.close()
 
     def agregar_ang(self, ang):
         """Normaliza a 2 decimales para que no haya incompatibilidades entre los elementos."""
@@ -113,15 +111,21 @@ class ResolucionGeometrica:
 
     @staticmethod
     def get_phi_variable(tratado_de_phi):
+        exception = Exception("Valor incorrecto en la celda 'Factor de Minoración de Resistencia'.\n"
+                            "Por favor, ingresar solo numeros o el valor predeterminado Variable según CIRSOC 201")
         try:
             if isinstance(tratado_de_phi, str):
-                tratado_de_phi.replace(",", ".")
+                tratado_de_phi.replace(",", ".")  # Adaptación a más de un tipo de input.
             return float(tratado_de_phi)
         except ValueError:
-            if isinstance(tratado_de_phi, str) and "VARIABLE" in tratado_de_phi.upper():
-                return True
-            raise Exception("Valor incorrecto en la celda 'Factor de Minoración de Resistencia'.\n"
-                            "Por favor, ingresar solo numeros o el valor predeterminado Variable según CIRSOC 205")
+            if isinstance(tratado_de_phi, str):
+                if "CIRSOC 201-2005" in tratado_de_phi.upper():
+                    return "según CIRSOC 201-2005"
+                elif "CIRSOC 201-2024" in tratado_de_phi.upper():
+                    return "según CIRSOC 201-2024"
+                else:
+                    raise exception
+            raise exception
 
     def obtener_planos_de_cargados(self, tipo, rows_range):
         if tipo == "2D":
@@ -240,7 +244,7 @@ class ResolucionGeometrica:
         plt.xticks(fontsize=10)
         plt.yticks(fontsize=10)
         self.diagrama_interaccion_wb.sh.pictures.add(fig,
-                                                     name="geometria",
+                                                     name="geometry",
                                                      update=True,
                                                      left=self.diagrama_interaccion_wb.sh.range("A32").left,
                                                      top=self.diagrama_interaccion_wb.sh.range("A32").top,
@@ -275,8 +279,8 @@ class ResolucionGeometrica:
         axis_color = "blue"
         x1, x2, y1, y2 = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG, self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
         x1p, y1p, x2p, y2p = self.plano_de_carga()
-        linea_plano_de_carga = Segmento(Nodo(x1p, y1p),
-                                        Nodo(x2p, y2p))
+        linea_plano_de_carga = Segment(Node(x1p, y1p),
+                                       Node(x2p, y2p))
         linea_plano_de_carga.plot(linewidth=3, c="k", linestyle="dashed")
         arrow_size = ((x2 - x1) / 100 + (y2 - y1) / 100) / 4
         plt.arrow(x1, 0, x2 - x1 + arrow_size * 7, 0, width=arrow_size, color=axis_color, alpha=1)
@@ -544,7 +548,7 @@ class ResolucionGeometrica:
                                                                            rows_range=filas_contorno)[1:]:
                     x = self.ingreso_datos_wb.get_value("C", fila_n)
                     y = self.ingreso_datos_wb.get_value("E", fila_n)
-                    coordenadas_nodos.append(Nodo(round(x, 3), round(y, 3)))  # Medidas en centímetros
+                    coordenadas_nodos.append(Node(round(x, 3), round(y, 3)))  # Medidas en centímetros
                 contorno = Contorno(coordenadas_nodos, signo, indice, ordenar=True)
                 if signo > 0:  # Solo se utilizan los contornos positivos para definir la discretización
                     max_x.append(max(contorno.x))
@@ -567,7 +571,7 @@ class ResolucionGeometrica:
                     min_y.append(y - r_ext)
                     delta_x.append(r_ext - r_int)
                     delta_y.append(r_ext - r_int)
-                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Nodo(x, y), indice=indice, radios=(r_int, r_ext),
+                contornos[str(i + 1)] = ContornoCircular(nodo_centro=Node(x, y), indice=indice, radios=(r_int, r_ext),
                                                          signo=signo)
             else:
                 pass

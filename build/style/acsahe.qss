@@ -1,0 +1,33 @@
+QWidget {
+    background-color: #f4faff;
+    font-family: Lato, Segoe UI, sans-serif;
+}
+
+QPushButton {
+    background-color: #ffffff;
+    border: 1px solid #b0c4de;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+QPushButton:hover {
+    background-color: #e6f0ff;
+}
+
+QPushButton:pressed {
+    background-color: #cce0ff;
+}
+
+QCheckBox {
+    spacing: 6px;
+}
+
+QLabel {
+    color: #2c3e50;
+    background: transparent;
+}
+
+
+QLabel:hover {
+    margin-left: 4px;
+}

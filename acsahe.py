@@ -1,146 +1,75 @@
-import tempfile
-import time
-import webbrowser
 import base64
-
-import numpy as np
 import math
-
-from tkinter import messagebox
+import tempfile
+import traceback
+import webbrowser
+import plotly.graph_objects as go
+import numpy as np
+import time
+import os
+import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QFont, QPixmap
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar, QDesktopWidget
-
-import plotly.graph_objects as go
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QLabel,
+    QProgressBar, QDesktopWidget
+)
+from tkinter import messagebox
 
 from diagrama_de_interaccion.diagramas_de_interaccion import DiagramaInteraccion2D
-from geometria.resolvedor_geometria import ResolucionGeometrica
+from geometry.section_analysis import ResolucionGeometrica
 
 
 def show_message(message, titulo="Mensaje"):
     messagebox.showinfo(titulo, message)
 
 
-class ACSAHE(QWidget):
+class ACSAHE:
     progress_bar_messages = {
-        "Inicio": "Geometría completada."
-                  " Construyendo diagrama de interacción para plano de carga λ={plano_de_carga}° ...",
+        "Inicio": "Geometría completada. Construyendo diagrama de interacción para plano de carga λ={plano_de_carga}° ...",
         "Medio": "Construyendo diagrama de interacción para plano de carga λ={plano_de_carga}° ...",
-        "Ultimo": "Construyendo resultados ..."}
+        "Ultimo": "Construyendo resultados ..."
+    }
 
-    def __init__(self, app_gui, nombre_del_archivo, path_archivo):
+    def __init__(self, app_gui, nombre_del_archivo, file_path, save_html=False, generate_pdf=False):
         super().__init__()
         self.file_name = nombre_del_archivo
+        self.save_html = save_html
+        self.generate_pdf = generate_pdf
         self.data_subsets = {}
         self.solucion_geometrica = None
-        self.path_to_file = path_archivo
-        self.app = app_gui
-        self.ejecutar_acsahe()
-        self.close()
+        self.file_path = file_path
+        self.exe_path = self.get_base_path()
+        self.app_gui = app_gui
+        file_folder = '\\'.join(file_path.split('/')[:-1])
+        self.icon_path_ico = f"{self.exe_path}\\build\\images\\Logo_H.ico"  ##TODO change when app structure is ready
+        self.start_process()
 
-    def ejecutar_acsahe(self):
-        self.setWindowTitle("ACSAHE")
-        logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO ACSAHE.webp"
-        icon_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo H.webp"
-        self.icon_path_ico = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\Logo_H.ico"
 
-        self.resize(650, 200)  # Tamaño de la pestaña
-        self.center()  # La centramos
-        self.layout = QVBoxLayout()
+    @staticmethod
+    def get_base_path():
+        if getattr(sys, 'frozen', False):
+            # Running from .exe
+            return os.path.dirname(sys.executable)
+        else:
+            # Running from .py script
+            return os.path.dirname(os.path.abspath(__file__))
 
-        font = QFont()
-        font.setPointSize(10)
-        # font.setItalic(True)
-        font.setFamily("Lato")
-
-        self.message_label = QLabel("Construyendo Geometría...", self)
-        self.message_label.setFont(font)
-        self.message_label.setAlignment(Qt.AlignCenter)
-
-        self.logoLabel = QLabel(self)
-        pixmap = QPixmap(logo_path)
-        resizedPixmap = pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.logoLabel.setPixmap(resizedPixmap)
-        self.logoLabel.setAlignment(Qt.AlignCenter)  # Centramos
-
-        # Añadimos la imagen en la ventana, y el ícono al lado del nombre
-        self.setWindowIcon(QIcon(icon_path))
-        self.layout.addWidget(self.logoLabel)
-
-        # El mensaje
-        self.message_label.setFont(font)
-        self.message_label.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(self.message_label)
-
-        # Seteando la barra de progreso
-        self.progress = QProgressBar(self)
-        self.progress.setFont(font)
-        self.layout.addWidget(self.progress)
-        self.estilo_barra_progreso()
-
-        #  Poniendo fondo blanco
-        self.setStyleSheet("QWidget { background-color: #f4faff; }")
-        self.setLayout(self.layout)
-
-        self.show()
-        self.update_progress_bar(int(0))
-        try:
-            self.start_process()
-        except Exception as e:
-            show_message(e)
-            raise e
-
-    def center(self):
-        qr = self.frameGeometry()  # Get the window rectangle
-        cp = QDesktopWidget().availableGeometry().center()  # Get the screen center point
-        qr.moveCenter(cp)  # Set the window rectangle center to the screen center
-        self.move(qr.topLeft())  # Move the window's top-left point
-
-    def update_progress_bar(self, value):
-        self.progress.setValue(value)
-
-    def update_message(self, message):
-        self.message_label.setText(message)
-
-    def estilo_barra_progreso(self):
-        self.progress.setStyleSheet("""
-
-            QProgressBar {
-                border: 2px solid #C0C0C0;
-                border-radius: 5px;
-                text-align: center; /* Ensure text is centered */
-                background-color: #f4faff;
-                color: #333; /* Color for the text */
-            }
-
-            QProgressBar::chunk {
-                background-color: #57A0D3; /* Lighter blue color */
-                width: 20px; /* Adjust width for better visibility of the dynamic effect */
-                margin: 0px; /* Remove margin if you want chunks to be contiguous */
-            }
-
-            QProgressBar::chunk:indeterminate {
-                background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, stop: 0 #57A0D3, stop: 1 #1034A6); /* Gradient from lighter blue to darker blue */
-                border-radius: 5px;
-            }
-        """)
+    def update_ui(self, message=None, progress_bar_value: int = None):
+        if hasattr(self.app_gui, "update_ui"):
+            self.app_gui.update_ui(message=message, value=progress_bar_value)
+        QApplication.processEvents()
 
     def start_process(self):
-        # First step
-
-        solucion_geometrica = ResolucionGeometrica(
-            file_path=f"{self.path_to_file + '/' if self.path_to_file else ''}{self.file_name}")
-
-        lista_ang = solucion_geometrica.lista_ang_plano_de_carga
-        lista_ang.sort()
-
         try:
+            solucion_geometrica = ResolucionGeometrica(file_path=self.file_path)
+            self.solucion_geometrica = solucion_geometrica
+
+            lista_ang = sorted(solucion_geometrica.lista_ang_plano_de_carga)
             self.steps = 2 + len(lista_ang)
-            time.sleep(1)
-            self.update_message(self.progress_bar_messages["Inicio"].format(
-                plano_de_carga=lista_ang[0]))
-            self.update_progress_bar(int(10))
-            # self.step_length = 100 / self.steps
+
+            self.update_ui("Construyendo Geometría...", 5)
+            QApplication.processEvents()
 
             data_subsets = {}
             lista_x_total, lista_y_total, lista_z_total, lista_color, lista_text_total, lista_color_total = [], [], [], [], [], []
@@ -149,9 +78,8 @@ class ACSAHE(QWidget):
             for step in range(2, self.steps + 1):
                 if step < 2 + len(lista_ang):
                     angulo_plano_de_carga = lista_ang[step - 2]
-                    self.update_message(
+                    self.update_ui(
                         self.progress_bar_messages["Medio"].format(plano_de_carga=angulo_plano_de_carga))
-                    QApplication.processEvents()
 
                     solucion_parcial = DiagramaInteraccion2D(
                         angulo_plano_de_carga if angulo_plano_de_carga != -1 else 0.00,
@@ -185,24 +113,21 @@ class ACSAHE(QWidget):
                     lista_z_total_sin_phi.extend((np.array(lista_z_parcial) / np.array(lista_phi_parcial)).tolist())
                     lista_text_total.extend(texto)
                     lista_color_total.extend(lista_color_parcial)
-                    self.update_progress_bar(int(step / self.steps * 100))
+                    self.update_ui(progress_bar_value=int(step / self.steps * 100))
                 else:
-                    self.update_progress_bar(int(step / self.steps * 100))
-                    self.update_message(self.progress_bar_messages["Ultimo"])
+                    self.update_ui(self.progress_bar_messages["Ultimo"], int(step / self.steps * 100))
                     self.construir_resultado_html(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
                                                   lista_text_total, lista_color_total, data_subsets)
         except Exception as e:
+            traceback.print_exc()
             print(e)
         finally:
             mensaje_extra = self.obtener_mensaje_hoja_de_resultados(solucion_geometrica)
-            self.update_message(f"ACSAHE ha finalizado!{mensaje_extra}")
+            self.update_ui(f"ACSAHE ha finalizado!{mensaje_extra}", progress_bar_value=100)
             QApplication.processEvents()
             solucion_geometrica.cerrar_hojas_de_calculo()
             time.sleep(1 if mensaje_extra else 0)
             # Ensure the window is visible, at the front, and active
-            self.showNormal()  # Restores the window if minimized
-            self.raise_()  # Brings the window to the front
-            self.activateWindow()  # Makes the window the active window
             time.sleep(1 if not mensaje_extra else 5)
 
     def construir_resultado_html(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
@@ -222,7 +147,7 @@ class ACSAHE(QWidget):
             if solucion_geometrica.problema["resultados_en_wb"] is True:
                 solucion_geometrica.insertar_valores_3D(data_subsets)
 
-        pre_path = self.path_to_file + '/' if self.path_to_file else ''
+        pre_path = self.exe_path + '/' if self.file_path else ''
         with open(f"{pre_path}build\\ext_utils/html/result_format.html", "r", encoding="UTF-8") as r, \
                 open(f"{pre_path}build\\ext_utils/html/assets/css/main.css") as main_css, \
                 open(f"{pre_path}build\\ext_utils/html/assets/css/noscript.css") as noscript_css, \
@@ -236,7 +161,7 @@ class ACSAHE(QWidget):
                     config=self.configuracion_descarga_imagen(
                         file_name=f"ACSAHE - Resultado {solucion_geometrica.problema['tipo']}"))
 
-                logo_path = f"{self.path_to_file + '/' if self.path_to_file else ''}build\\images\\LOGO%20ACSAHE.webp"
+                logo_path = f"{self.file_path + '/' if self.file_path else ''}build\\images\\LOGO%20ACSAHE.webp"
                 encoded_icon_string = base64.b64encode(icon_file.read()).decode('utf-8')
                 tmp_result_file.write(acsahe.format(
                     icon_encoded=encoded_icon_string,

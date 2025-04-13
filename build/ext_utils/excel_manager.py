@@ -5,12 +5,14 @@ class ExcelManager:
     default_columns_range_value = tuple([chr(x) for x in range(65, 65+7)])  # Tuple from A to G
     default_rows_range_value = tuple(range(1, 400))
 
-    def __init__(self, file_name, sheet_name):
-        self.wb = xw.Book(file_name)
+    def __init__(self, file_name, sheet_name, read_only=True):
+        self.app = xw.App(visible=False)  # Opening in background
+        self.wb = self.app.books.open(file_name, read_only=read_only)
         self.sh = self.wb.sheets[sheet_name]
 
     def close(self):
-        del self.wb
+        self.wb.close()
+        self.app.quit()
 
     def get_value(self, column, row):
         return self.sh.range(f"{column}{row}").value
@@ -143,7 +145,7 @@ class ExcelManager:
         return f"{new_col_letters}{new_row_number}"
 
     @staticmethod
-    def col_letter_to_num(col_str):
+    def col_letter_to_num(col_str: str):
         """Convert column letter(s) to a number."""
         num = 0
         for c in col_str.upper():

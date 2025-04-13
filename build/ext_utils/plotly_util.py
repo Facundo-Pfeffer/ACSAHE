@@ -1,5 +1,4 @@
 import plotly.graph_objects as go
-from plotly.graph_objs.scatter.legendgrouptitle import Font
 import hashlib
 import math
 import numpy as np
@@ -26,8 +25,8 @@ class PlotlyUtil(object):
         x_borde = []
         y_borde = []
         for segmento in elemento.segmentos_borde:
-            x_borde.extend([segmento.nodo_1.x, segmento.nodo_2.x])
-            y_borde.extend([segmento.nodo_1.y, segmento.nodo_2.y])
+            x_borde.extend([segmento.start_node.x, segmento.end_node.x])
+            y_borde.extend([segmento.start_node.y, segmento.end_node.y])
         self.fig.add_trace(go.Scatter(
             x=x_borde, y=y_borde,
             showlegend=False,
@@ -72,7 +71,6 @@ class PlotlyUtil(object):
                      )))
 
         self.plot_angulos_planos_de_carga_y_ejes(seccion, lista_de_angulos_plano_de_carga)
-
 
     def plot_angulos_planos_de_carga_y_ejes(self, seccion, lista_ang_planos_de_carga):
         lista_ang_planos_de_carga.sort()
@@ -285,7 +283,7 @@ class PlotlyUtil(object):
         if trapecio_circular.segmentos_rectos is not None:
             for segmento in trapecio_circular.segmentos_rectos:
                 self.fig.add_trace(self.plotly_segmento(
-                    segmento.nodo_1, segmento.nodo_2, color, espesor, transparencia, showlegend=False))
+                    segmento.start_node, segmento.end_node, color, espesor, transparencia, showlegend=False))
 
         # Centroide de los elementos
         if mostrar_centroide:
