@@ -517,11 +517,12 @@ class ElementoTrapecioCircular(object):
         return self.angulo_inicial <= angulo <= self.angulo_final and self.radio_interno <= radio <= self.radio_externo
 
     def desplazar_sistema_de_referencia(self, desp_x, desp_y):
-        self.xg = self.xg + desp_x
-        self.xc = self.xc + desp_x
-        self.yg = self.yg + desp_y
-        self.yc = self.yc + desp_y
-        self.nodo_centro = Node(self.xc, self.yc)
+        self.xg += desp_x
+        self.xc += desp_x
+        self.yg += desp_y
+        self.yc += desp_y
+        self.nodo_centro.x += desp_x
+        self.nodo_centro.y += desp_y
         self.nodos_extremos = self.obtener_nodos_extremos()
         self.segmentos_rectos = self.obtener_segmentos_rectos()
 

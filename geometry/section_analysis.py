@@ -113,10 +113,10 @@ class ResolucionGeometrica:
             return float(tratado_de_phi)
         except ValueError:
             if isinstance(tratado_de_phi, str):
-                if "CIRSOC 201-2005" in tratado_de_phi.upper():
-                    return "según CIRSOC 201-2005"
-                elif "CIRSOC 201-2024" in tratado_de_phi.upper():
+                if "CIRSOC 201-2024" in tratado_de_phi.upper():
                     return "según CIRSOC 201-2024"
+                elif "CIRSOC 201" in tratado_de_phi.upper():
+                    return "según CIRSOC 201-2005"
                 else:
                     raise exception
             raise exception
@@ -135,7 +135,9 @@ class ResolucionGeometrica:
                 self.agregar_ang(ang)
 
     def obtener_puntos_a_verificar(self, tipo):
-        cantidad_de_estados = self.ingreso_datos_sheet.get_value_on_the_right("Cantidad de Estados", n_column=2)
+        rows_range = tuple(range(46, self.ingreso_datos_sheet.default_rows_range_value[-1]))
+        cantidad_de_estados = self.ingreso_datos_sheet.get_value_on_the_right(
+            "Cantidad de Estados", n_column=2, rows_range=rows_range)
         if not cantidad_de_estados:
             return []
         cantidad_de_estados = int(cantidad_de_estados)

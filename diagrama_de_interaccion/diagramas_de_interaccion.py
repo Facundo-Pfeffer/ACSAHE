@@ -48,19 +48,17 @@ class DiagramaInteraccion2D:
 
     def get_rebar_array(self):
         return np.array([
-            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.relacion_constitutiva) for rebar in self.geometria.EA],
+            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0) for rebar in self.geometria.EA],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
-                   ('strain', float), ('relacion_constitutiva', object)])
+                   ('strain', float)])
 
     def get_prestressed_reinforcement_array(self):
         return np.array([
             (rebar.xg, rebar.yg, rebar.area, 0.0,
-             0.0, rebar.def_elastica_hormigon_perdidas, rebar.deformacion_de_pretensado_inicial, 0.0,
-             rebar.relacion_constitutiva) for rebar in self.geometria.EAP],
+             0.0, rebar.def_elastica_hormigon_perdidas, rebar.deformacion_de_pretensado_inicial, 0.0)
+            for rebar in self.geometria.EAP],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
-                   ('flexural_strain', float), ('concrete_shortening_strain', float), ('effective_strain', float), ('total_strain', float),
-                   ('relacion_constitutiva', object)
-                   ])
+                   ('flexural_strain', float), ('concrete_shortening_strain', float), ('effective_strain', float), ('total_strain', float)])
 
     def iterar(self):
         """Método principal para la obtención de los diagramas de interacción."""
@@ -218,8 +216,7 @@ class DiagramaInteraccion2D:
 
         # -------------------- 3. Passive Rebar --------------------
         fuerzas_rebar = np.array([
-            rel(e) * a for rel, e, a in zip(
-                rot_rebar_array['relacion_constitutiva'],
+            self.geometria.EA[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_rebar_array['strain'],
                 rot_rebar_array['area']
             )
@@ -237,8 +234,7 @@ class DiagramaInteraccion2D:
         )
 
         fuerzas_prestressed = np.array([
-            rel(e) * a for rel, e, a in zip(
-                rot_prestressed_array['relacion_constitutiva'],
+            self.geometria.EAP[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_prestressed_array['total_strain'],
                 rot_prestressed_array['area']
             )
