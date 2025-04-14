@@ -6,10 +6,9 @@ from PyQt5.QtWidgets import (
 
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
-
-
-import sys
 import os
+
+from acsahe import ACSAHE
 
 
 class ACSAHEUserInterface(QMainWindow):
@@ -426,7 +425,6 @@ class ACSAHEWorker(QObject):
         self.gui.activateWindow()  # Makes the window the active window
 
     def run(self):
-        from acsahe import ACSAHE
 
         class GuiWrapper:
             def __init__(self, gui, signal):

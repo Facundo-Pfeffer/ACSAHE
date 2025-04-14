@@ -11,7 +11,7 @@ from scipy.optimize import fsolve
 
 from materiales.acero_pasivo import BarraAceroPasivo
 from materiales.acero_pretensado import BarraAceroPretensado
-from build.ext_utils.excel_manager import ExcelManager
+from build.ext_utils.excel_manager import ExcelManager, ExcelSheetManager
 from geometry.section_geometry_engine import Node, Contorno, SeccionArbitraria, Segment, ContornoCircular
 from materiales.hormigon import Hormigon
 from materiales.matrices import MatrizAceroPasivo, MatrizAceroActivo
@@ -30,7 +30,7 @@ class ResolucionGeometrica:
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
 
     def __init__(self, file_path):
-        self.ingreso_datos_wb, self.armaduras_pasivas_wb, self.armaduras_activas_wb, self.diagrama_interaccion_wb, self.diagrama_interaccion_3D_wb = None, None, None, None, None
+        self.ingreso_datos_sheet, self.armaduras_pasivas_sheet, self.armaduras_activas_sheet, self.diagrama_interaccion_sheet, self.diagrama_interaccion_3D_sheet = None, None, None, None, None
         self.max_x_seccion, self.min_x_seccion, self.max_y_seccion, self.min_y_seccion = None, None, None, None
         self.lista_ang_plano_de_carga = set()
         self.file_name = file_path
@@ -41,48 +41,42 @@ class ResolucionGeometrica:
             message = f"Error en la generación de la geometría:\n{e}"
             show_message(message)
             raise e
-        finally:
-            for work_sheet in [work_sheet for work_sheet in [self.ingreso_datos_wb, self.armaduras_pasivas_wb, self.armaduras_activas_wb, self.diagrama_interaccion_wb, self.diagrama_interaccion_3D_wb]if work_sheet is not None] :
-                work_sheet.close()
-
-        # self.medir_diferencias.sort(reverse=True)
-        # print(self.medir_diferencias)
-        # self.mostrar_resultado(blanco_y_negro=False)
 
     def build(self):
-        self.cargar_hojas_de_calculo()
-        self.problema = self.obtener_problema_a_resolver()
+        with ExcelManager(self.file_name) as excel_manager:
+            self.cargar_hojas_de_calculo(excel_manager)
+            self.problema = self.obtener_problema_a_resolver()
 
-        self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
-        self.cargar_propiedades_materiales()
+            self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
+            self.cargar_propiedades_materiales()
 
-        self.seccion_H = self.obtener_matriz_hormigon()
+            self.seccion_H = self.obtener_matriz_hormigon()
 
-        self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
+            self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
 
-        self.EEH = self.seccion_H.elementos  # Matriz Hormigón
-        self.EA = self.obtener_matriz_acero_pasivo()
-        self.EAP = self.obtener_matriz_acero_pretensado()
+            self.EEH = self.seccion_H.elementos  # Matriz Hormigón
+            self.EA = self.obtener_matriz_acero_pasivo()
+            self.EAP = self.obtener_matriz_acero_pretensado()
 
-        self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
-        self.planos_de_deformacion = self.obtener_planos_de_deformacion()
+            self.deformacion_maxima_de_acero = self.obtener_deformacion_maxima_de_acero()
+            self.planos_de_deformacion = self.obtener_planos_de_deformacion()
 
-        self.ec, self.phix, self.phiy = self.obtener_plano_deformación_inicial_pretensado()
-        # self.print_result_tridimensional(ec, phix, phiy)
-        self.ec_plano_deformacion_elastica_inicial = lambda x, y: self.ec + math.tan(math.radians(self.phix)) * (
-            y) + math.tan(
-            math.radians(self.phiy)) * x
-        self.asignar_deformacion_hormigon_a_elementos_pretensados()
-        if self.problema["tipo"] == "2D":
-            self.construir_grafica_seccion()
+            self.ec, self.phix, self.phiy = self.obtener_plano_deformación_inicial_pretensado()
+            # self.print_result_tridimensional(ec, phix, phiy)
+            self.ec_plano_deformacion_elastica_inicial = lambda x, y: self.ec + math.tan(math.radians(self.phix)) * (
+                y) + math.tan(
+                math.radians(self.phiy)) * x
+            self.asignar_deformacion_hormigon_a_elementos_pretensados()
+            if self.problema["tipo"] == "2D":
+                self.construir_grafica_seccion()
 
-    def cargar_hojas_de_calculo(self):
-        """Abre (inicializa) las hojas de cálculo."""
-        self.ingreso_datos_wb = ExcelManager(self.file_name, "Ingreso de Datos")
-        self.armaduras_pasivas_wb = ExcelManager(self.file_name, "Armaduras Pasivas")
-        self.armaduras_activas_wb = ExcelManager(self.file_name, "Armaduras Activas")
-        self.diagrama_interaccion_wb = ExcelManager(self.file_name, "Resultados 2D")
-        self.diagrama_interaccion_3D_wb = ExcelManager(self.file_name, "Resultados 3D")
+    def cargar_hojas_de_calculo(self, excel_manager):
+        """Inicializa las hojas de cálculo a partir de ExcelManager."""
+        self.ingreso_datos_sheet = excel_manager.get_sheet("Ingreso de Datos")
+        self.armaduras_pasivas_sheet = excel_manager.get_sheet("Armaduras Pasivas")
+        self.armaduras_activas_sheet = excel_manager.get_sheet("Armaduras Activas")
+        self.diagrama_interaccion_sheet = excel_manager.get_sheet("Resultados 2D")
+        self.diagrama_interaccion_3D_sheet = excel_manager.get_sheet("Resultados 3D")
 
     def agregar_ang(self, ang):
         """Normaliza a 2 decimales para que no haya incompatibilidades entre los elementos."""
@@ -90,13 +84,13 @@ class ResolucionGeometrica:
             self.lista_ang_plano_de_carga.add(round(ang, 2))
 
     def obtener_problema_a_resolver(self):
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("RESULTADOS",
-                                                                  number_of_rows_after_value=20, columns_range="A")
+        rows_range = self.ingreso_datos_sheet.get_n_rows_after_value("RESULTADOS",
+                                                                     number_of_rows_after_value=20, columns_range="A")
 
-        tipo = self.ingreso_datos_wb.get_value_on_the_right("Tipo", rows_range, 2)
-        verificacion = self.ingreso_datos_wb.get_value_on_the_right("Verificación de Estados", rows_range, 2)
-        resultados_en_wb = self.ingreso_datos_wb.get_value_on_the_right("Pegar resultados en planilla", rows_range, 2)
-        tratado_de_phi = self.ingreso_datos_wb.get_value_on_the_right("ϕ\nFactor de Minoración de Resistencia", rows_range, 2)
+        tipo = self.ingreso_datos_sheet.get_value_on_the_right("Tipo", rows_range, 2)
+        verificacion = self.ingreso_datos_sheet.get_value_on_the_right("Verificación de Estados", rows_range, 2)
+        resultados_en_wb = self.ingreso_datos_sheet.get_value_on_the_right("Pegar resultados en planilla", rows_range, 2)
+        tratado_de_phi = self.ingreso_datos_sheet.get_value_on_the_right("ϕ\nFactor de Minoración de Resistencia", rows_range, 2)
         self.obtener_planos_de_cargados(tipo, rows_range)
         puntos_a_verificar = self.obtener_puntos_a_verificar(tipo)
         self.lista_ang_plano_de_carga = list(self.lista_ang_plano_de_carga)
@@ -129,23 +123,23 @@ class ResolucionGeometrica:
 
     def obtener_planos_de_cargados(self, tipo, rows_range):
         if tipo == "2D":
-            self.agregar_ang(self.ingreso_datos_wb.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2))
+            self.agregar_ang(self.ingreso_datos_sheet.get_value_on_the_right("Ángulo plano de carga λ =", rows_range, 2))
         else:  # 3D
             cantidad_planos_de_carga = int(
-                self.ingreso_datos_wb.get_value_on_the_right("Cantidad de Planos de Carga", rows_range, 2))
-            planos_de_carga_fila = self.ingreso_datos_wb.get_n_rows_after_value(
+                self.ingreso_datos_sheet.get_value_on_the_right("Cantidad de Planos de Carga", rows_range, 2))
+            planos_de_carga_fila = self.ingreso_datos_sheet.get_n_rows_after_value(
                 "Cantidad de Planos de Carga",
                 cantidad_planos_de_carga + 2,
             )
-            for ang in [self.ingreso_datos_wb.get_value("C", row_n) for row_n in planos_de_carga_fila[2:]]:
+            for ang in [self.ingreso_datos_sheet.get_value("C", row_n) for row_n in planos_de_carga_fila[2:]]:
                 self.agregar_ang(ang)
 
     def obtener_puntos_a_verificar(self, tipo):
-        cantidad_de_estados = self.ingreso_datos_wb.get_value_on_the_right("Cantidad de Estados", n_column=2)
+        cantidad_de_estados = self.ingreso_datos_sheet.get_value_on_the_right("Cantidad de Estados", n_column=2)
         if not cantidad_de_estados:
             return []
         cantidad_de_estados = int(cantidad_de_estados)
-        estados_fila_lista = self.ingreso_datos_wb.get_n_rows_after_value(
+        estados_fila_lista = self.ingreso_datos_sheet.get_n_rows_after_value(
             "Cantidad de Estados",
             cantidad_de_estados + 3,
         )
@@ -153,17 +147,17 @@ class ResolucionGeometrica:
         for estado_fila in estados_fila_lista[3:]:
             if tipo == "2D":
                 estado = {
-                    "nombre": self.ingreso_datos_wb.get_value("A", estado_fila),
-                    "P": self.ingreso_datos_wb.get_value("C", estado_fila),
-                    "M": self.ingreso_datos_wb.get_value("E", estado_fila),
+                    "nombre": self.ingreso_datos_sheet.get_value("A", estado_fila),
+                    "P": self.ingreso_datos_sheet.get_value("C", estado_fila),
+                    "M": self.ingreso_datos_sheet.get_value("E", estado_fila),
                 }
             else:
-                plano_de_carga = self.ingreso_datos_wb.get_value("H", estado_fila)
+                plano_de_carga = self.ingreso_datos_sheet.get_value("H", estado_fila)
                 estado = {
-                    "nombre": self.ingreso_datos_wb.get_value("A", estado_fila),
-                    "P": self.ingreso_datos_wb.get_value("C", estado_fila),
-                    "Mx": self.ingreso_datos_wb.get_value("E", estado_fila),
-                    "My": self.ingreso_datos_wb.get_value("G", estado_fila),
+                    "nombre": self.ingreso_datos_sheet.get_value("A", estado_fila),
+                    "P": self.ingreso_datos_sheet.get_value("C", estado_fila),
+                    "Mx": self.ingreso_datos_sheet.get_value("E", estado_fila),
+                    "My": self.ingreso_datos_sheet.get_value("G", estado_fila),
                     "plano_de_carga": plano_de_carga if plano_de_carga is not None else 0  # se fuerza 0 para estado de solo esfuerzo normal, en el cual en rigor corresponde considerar infinitos planos de carga.
                 }
                 self.agregar_ang(estado["plano_de_carga"])
@@ -174,8 +168,8 @@ class ResolucionGeometrica:
 
     def cargar_propiedades_materiales(self):
 
-        self.hormigon = Hormigon(tipo=self.ingreso_datos_wb.get_value("C", "4"))
-        self.tipo_estribo = self.ingreso_datos_wb.get_value("C", "10")
+        self.hormigon = Hormigon(tipo=self.ingreso_datos_sheet.get_value("C", "4"))
+        self.tipo_estribo = self.ingreso_datos_sheet.get_value("C", "10")
 
         def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
         self.setear_propiedades_acero_pasivo(def_de_rotura_a_pasivo)
@@ -216,13 +210,13 @@ class ResolucionGeometrica:
         return min(def_max_acero_pasivo, def_max_acero_activo)
 
     def obtener_def_de_rotura_a_pasivo(self):
-        tipo = self.ingreso_datos_wb.get_value("C", "6")
+        tipo = self.ingreso_datos_sheet.get_value("C", "6")
         posibles_opciones = {"ADN 420": "B", "ADN 500": "C", "AL 220": "D", "Provisto por Usuario": "E"}
-        value = self.armaduras_pasivas_wb.get_value(posibles_opciones.get(tipo, "B"), 5)
+        value = self.armaduras_pasivas_sheet.get_value(posibles_opciones.get(tipo, "B"), 5)
         return value
 
     def obtener_def_de_pretensado_inicial(self):
-        value = self.ingreso_datos_wb.get_value("E", 8)
+        value = self.ingreso_datos_sheet.get_value("E", 8)
         return value / 1000
 
     def construir_grafica_seccion(self):
@@ -243,12 +237,12 @@ class ResolucionGeometrica:
         ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=10, fontweight='bold')
         plt.xticks(fontsize=10)
         plt.yticks(fontsize=10)
-        self.diagrama_interaccion_wb.sh.pictures.add(fig,
-                                                     name="geometry",
-                                                     update=True,
-                                                     left=self.diagrama_interaccion_wb.sh.range("A32").left,
-                                                     top=self.diagrama_interaccion_wb.sh.range("A32").top,
-                                                     export_options={"dpi": 300,
+        self.diagrama_interaccion_sheet.sh.pictures.add(fig,
+                                                        name="geometry",
+                                                        update=True,
+                                                        left=self.diagrama_interaccion_sheet.sh.range("A32").left,
+                                                        top=self.diagrama_interaccion_sheet.sh.range("A32").top,
+                                                        export_options={"dpi": 300,
                                                                      "bbox_inches": 'tight'})
 
     def obtener_discretizacion(self):
@@ -351,7 +345,7 @@ class ResolucionGeometrica:
         plt.xticks([3, -self.deformacion_maxima_de_acero * 1000], ["Aplastamiento H° 3‰", "Rotura acero pasivo/activo"],
                    rotation='vertical')
         # ax.set_facecolor((0, 0, 0))
-        self.diagrama_interaccion_wb.add_plot(fig, "L24", name="planos")
+        self.diagrama_interaccion_sheet.add_plot(fig, "L24", name="planos")
 
     def obtener_color_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -407,7 +401,7 @@ class ResolucionGeometrica:
                                                                           elemento_pretensado.yg)
 
     def obtener_matriz_acero_pasivo(self):
-        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
+        lista_filas = self.ingreso_datos_sheet.get_rows_range_between_values(
             ("ARMADURAS PASIVAS (H°- Armado)", "ARMADURAS ACTIVAS (H°- Pretensado)"),
             columns_range=["A"])
         resultado = MatrizAceroPasivo()
@@ -425,21 +419,21 @@ class ResolucionGeometrica:
         return 0 if abs(valor) <= tolerancia else valor
 
     def obtener_valores_acero_tabla(self, fila):
-        return (self.ingreso_datos_wb.get_value("C", fila),
-                self.ingreso_datos_wb.get_value("E", fila),
-                self.ingreso_datos_wb.get_value("G", fila),
-                self.ingreso_datos_wb.get_value("A", fila))
+        return (self.ingreso_datos_sheet.get_value("C", fila),
+                self.ingreso_datos_sheet.get_value("E", fila),
+                self.ingreso_datos_sheet.get_value("G", fila),
+                self.ingreso_datos_sheet.get_value("A", fila))
 
     def setear_propiedades_acero_pasivo(self, def_de_rotura_a_pasivo):
         try:
-            tipo = self.ingreso_datos_wb.get_value("C", "6")
+            tipo = self.ingreso_datos_sheet.get_value("C", "6")
             self.acero_pasivo = tipo
             if tipo == "Provisto por usuario":
                 valores = {
                     "tipo": "Provisto por usuario",
-                    "fy": self.armaduras_pasivas_wb.get_value("E", "3"),
-                    "E": self.armaduras_pasivas_wb.get_value("E", "4"),
-                    "eu": self.armaduras_pasivas_wb.get_value("E", "5")
+                    "fy": self.armaduras_pasivas_sheet.get_value("E", "3"),
+                    "E": self.armaduras_pasivas_sheet.get_value("E", "4"),
+                    "eu": self.armaduras_pasivas_sheet.get_value("E", "5")
                 }
 
                 if not all(bool(v) for k, v in valores.items()):
@@ -460,7 +454,7 @@ class ResolucionGeometrica:
             raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
 
     def obtener_matriz_acero_pretensado(self):
-        lista_filas = self.ingreso_datos_wb.get_rows_range_between_values(
+        lista_filas = self.ingreso_datos_sheet.get_rows_range_between_values(
             ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"),
             columns_range=["A"])
         resultado = MatrizAceroActivo()
@@ -475,19 +469,19 @@ class ResolucionGeometrica:
 
     def setear_propiedades_acero_activo(self, def_de_pretensado_inicial):
         try:
-            tipo = self.ingreso_datos_wb.get_value("C", "8")
+            tipo = self.ingreso_datos_sheet.get_value("C", "8")
             tipo = tipo
             self.acero_activo = tipo
             if tipo == "Provisto por usuario":
                 valores = {
                     "tipo": "Provisto por usuario",
-                    "Eps": self.armaduras_activas_wb.get_value("E", "3"),
-                    "fpy": self.armaduras_activas_wb.get_value("E", "4"),
-                    "fpu": self.armaduras_activas_wb.get_value("E", "5"),
-                    "epu": self.armaduras_activas_wb.get_value("E", "6"),
-                    "N": self.armaduras_activas_wb.get_value("E", "7"),
-                    "K": self.armaduras_activas_wb.get_value("E", "8"),
-                    "Q": self.armaduras_activas_wb.get_value("E", "9"),
+                    "Eps": self.armaduras_activas_sheet.get_value("E", "3"),
+                    "fpy": self.armaduras_activas_sheet.get_value("E", "4"),
+                    "fpu": self.armaduras_activas_sheet.get_value("E", "5"),
+                    "epu": self.armaduras_activas_sheet.get_value("E", "6"),
+                    "N": self.armaduras_activas_sheet.get_value("E", "7"),
+                    "K": self.armaduras_activas_sheet.get_value("E", "8"),
+                    "Q": self.armaduras_activas_sheet.get_value("E", "9"),
                     "deformacion_de_pretensado_inicial": def_de_pretensado_inicial
                 }
 
@@ -513,25 +507,25 @@ class ResolucionGeometrica:
             raise Exception("No se pudieron establecer las propiedades del acero activo, revise configuración")
 
     def obtener_indice(self, contorno):
-        value = self.ingreso_datos_wb.get_value("A", contorno[0])
+        value = self.ingreso_datos_sheet.get_value("A", contorno[0])
         return value.split()[-1]
 
     def obtener_signo(self, contorno):
-        value = self.ingreso_datos_wb.get_value("C", contorno[0])
+        value = self.ingreso_datos_sheet.get_value("C", contorno[0])
         return +1 if "Pos" in value else -1
 
     def obtener_tipo(self, contorno):
-        value = self.ingreso_datos_wb.get_value("E", contorno[0])
+        value = self.ingreso_datos_sheet.get_value("E", contorno[0])
         return value
 
     def get_cantidad_de_nodos(self, contorno):
-        return self.ingreso_datos_wb.get_value("G", contorno[0])
+        return self.ingreso_datos_sheet.get_value("G", contorno[0])
 
     def obtener_matriz_hormigon(self):
-        filas_hormigon = self.ingreso_datos_wb.get_rows_range_between_values(
+        filas_hormigon = self.ingreso_datos_sheet.get_rows_range_between_values(
             ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"),
             columns_range=["A"])
-        lista_filas_contornos = self.ingreso_datos_wb.subdivide_range_in_contain_word("A", filas_hormigon, "Contorno")
+        lista_filas_contornos = self.ingreso_datos_sheet.subdivide_range_in_contain_word("A", filas_hormigon, "Contorno")
         contornos = {}
         coordenadas_nodos = []
         max_x, min_x = [], []
@@ -544,10 +538,10 @@ class ResolucionGeometrica:
             indice = self.obtener_indice(filas_contorno)
             if tipo == "Poligonal":
                 cantidad_de_nodos = int(self.get_cantidad_de_nodos(filas_contorno))
-                for fila_n in self.ingreso_datos_wb.get_n_rows_after_value("Nodo Nº", cantidad_de_nodos + 1,
-                                                                           rows_range=filas_contorno)[1:]:
-                    x = self.ingreso_datos_wb.get_value("C", fila_n)
-                    y = self.ingreso_datos_wb.get_value("E", fila_n)
+                for fila_n in self.ingreso_datos_sheet.get_n_rows_after_value("Nodo Nº", cantidad_de_nodos + 1,
+                                                                              rows_range=filas_contorno)[1:]:
+                    x = self.ingreso_datos_sheet.get_value("C", fila_n)
+                    y = self.ingreso_datos_sheet.get_value("E", fila_n)
                     coordenadas_nodos.append(Node(round(x, 3), round(y, 3)))  # Medidas en centímetros
                 contorno = Contorno(coordenadas_nodos, signo, indice, ordenar=True)
                 if signo > 0:  # Solo se utilizan los contornos positivos para definir la discretización
@@ -560,10 +554,10 @@ class ResolucionGeometrica:
                 contornos[str(i + 1)] = contorno
                 coordenadas_nodos = []
             elif tipo == "Circular":
-                x = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 2)
-                y = self.ingreso_datos_wb.get_value_on_the_right("Nodo Centro", filas_contorno, 4)
-                r_int = self.ingreso_datos_wb.get_value_on_the_right("Radio Interno [cm]", filas_contorno, 2)
-                r_ext = self.ingreso_datos_wb.get_value_on_the_right("Radio Externo [cm]", filas_contorno, 2)
+                x = self.ingreso_datos_sheet.get_value_on_the_right("Nodo Centro", filas_contorno, 2)
+                y = self.ingreso_datos_sheet.get_value_on_the_right("Nodo Centro", filas_contorno, 4)
+                r_int = self.ingreso_datos_sheet.get_value_on_the_right("Radio Interno [cm]", filas_contorno, 2)
+                r_ext = self.ingreso_datos_sheet.get_value_on_the_right("Radio Externo [cm]", filas_contorno, 2)
                 if signo > 0:
                     max_x.append(x + r_ext)
                     min_x.append(x - r_ext)
@@ -585,14 +579,14 @@ class ResolucionGeometrica:
     def get_discretizacion(self, delta_x, delta_y, contornos):
         hay_contorno_circular = any(isinstance(v, ContornoCircular) for k, v in contornos.items())
         hay_contorno_rectangular = any(not isinstance(x, ContornoCircular) for x in contornos)
-        rows_range = self.ingreso_datos_wb.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",
-                                                                  number_of_rows_after_value=20, columns_range="A")
-        nivel_discretizacion = self.ingreso_datos_wb.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
+        rows_range = self.ingreso_datos_sheet.get_n_rows_after_value("DISCRETIZACIÓN DE LA SECCIÓN",
+                                                                     number_of_rows_after_value=20, columns_range="A")
+        nivel_discretizacion = self.ingreso_datos_sheet.get_value_on_the_right("Nivel de Discretización", rows_range, 2)
         self.nivel_disc = nivel_discretizacion
         if nivel_discretizacion == "Avanzada (Ingreso Manual)":
-            dx = self.ingreso_datos_wb.get_value_on_the_right("ΔX [cm] =", rows_range, 2)
-            dy = self.ingreso_datos_wb.get_value_on_the_right("ΔY [cm] =", rows_range, 2)
-            d_ang = self.ingreso_datos_wb.get_value_on_the_right("Δθ [°] =", rows_range, 2)
+            dx = self.ingreso_datos_sheet.get_value_on_the_right("ΔX [cm] =", rows_range, 2)
+            dy = self.ingreso_datos_sheet.get_value_on_the_right("ΔY [cm] =", rows_range, 2)
+            d_ang = self.ingreso_datos_sheet.get_value_on_the_right("Δθ [°] =", rows_range, 2)
             return (dx if hay_contorno_rectangular else None,
                     dy if hay_contorno_rectangular else None,
                     min(dx, dy) if hay_contorno_circular else None,
@@ -712,14 +706,14 @@ class ResolucionGeometrica:
                              zip(v["x"], v["y"])].copy()
             list_values = np.array([v["z"], lista_x_total, v["phi"]])
             list_values = list_values.transpose().tolist()
-            self.diagrama_interaccion_wb.change_cell_value_by_range("G1", k)
-            self.diagrama_interaccion_wb.insert_values_vertically("I3", list_values, columns_to_clean=["I", "J", "K"], start_row=3)
+            self.diagrama_interaccion_sheet.change_cell_value_by_range("G1", k)
+            self.diagrama_interaccion_sheet.insert_values_vertically("I3", list_values, columns_to_clean=["I", "J", "K"], start_row=3)
 
             X = [x["M"] for x in lista_puntos_a_verificar]
             Y = [x["P"] for x in lista_puntos_a_verificar]
 
             puntos_a_verificar = np.array([Y, X]).transpose().tolist()
-            self.diagrama_interaccion_wb.insert_values_vertically("N3", puntos_a_verificar, columns_to_clean=["N", "O"], start_row=3)
+            self.diagrama_interaccion_sheet.insert_values_vertically("N3", puntos_a_verificar, columns_to_clean=["N", "O"], start_row=3)
 
     def insertar_valores_3D(self, data_subset):
         i = 0  # contador
@@ -727,17 +721,17 @@ class ResolucionGeometrica:
             list_values = np.array([v["x"], v["y"], v["z"], v["phi"]])
             list_values = list_values.transpose().tolist()
             if i == 0:  # Poniendo el valor de lambda en la primera celda
-                self.diagrama_interaccion_3D_wb.change_cell_value_by_range("A1", f"λ= {k} °")
-                self.diagrama_interaccion_3D_wb.clear_contents_from_column(6)
-                self.diagrama_interaccion_3D_wb.insert_values_vertically("A4", list_values, start_row=4)
+                self.diagrama_interaccion_3D_sheet.change_cell_value_by_range("A1", f"λ= {k} °")
+                self.diagrama_interaccion_3D_sheet.clear_contents_from_column(6)
+                self.diagrama_interaccion_3D_sheet.insert_values_vertically("A4", list_values, start_row=4)
                 i = i + 1
                 continue
-            new_range = self.diagrama_interaccion_3D_wb.calculate_new_range_by_coll_offset("A1:D3", column_offset=5 * i)
-            self.diagrama_interaccion_3D_wb.copy_paste_range("A1:D3", new_range)
+            new_range = self.diagrama_interaccion_3D_sheet.calculate_new_range_by_coll_offset("A1:D3", column_offset=5 * i)
+            self.diagrama_interaccion_3D_sheet.copy_paste_range("A1:D3", new_range)
             top_bottom_cell = new_range.split(":")[0]
-            self.diagrama_interaccion_3D_wb.change_cell_value_by_range(top_bottom_cell, f"λ= {k} °")
-            self.diagrama_interaccion_3D_wb.insert_values_vertically(
-                self.diagrama_interaccion_3D_wb.shift_cell_by_offset(top_bottom_cell, col_offset=0, row_offset=3),
+            self.diagrama_interaccion_3D_sheet.change_cell_value_by_range(top_bottom_cell, f"λ= {k} °")
+            self.diagrama_interaccion_3D_sheet.insert_values_vertically(
+                self.diagrama_interaccion_3D_sheet.shift_cell_by_offset(top_bottom_cell, col_offset=0, row_offset=3),
                 list_values,
                 start_row=4)
             i = i + 1

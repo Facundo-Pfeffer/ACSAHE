@@ -1,18 +1,11 @@
 import xlwings as xw
 
-
-class ExcelManager:
+class ExcelSheetManager:
     default_columns_range_value = tuple([chr(x) for x in range(65, 65+7)])  # Tuple from A to G
     default_rows_range_value = tuple(range(1, 400))
 
-    def __init__(self, file_name, sheet_name, read_only=True):
-        self.app = xw.App(visible=False)  # Opening in background
-        self.wb = self.app.books.open(file_name, read_only=read_only)
-        self.sh = self.wb.sheets[sheet_name]
-
-    def close(self):
-        self.wb.close()
-        self.app.quit()
+    def __init__(self, sheet):
+        self.sh = sheet
 
     def get_value(self, column, row):
         return self.sh.range(f"{column}{row}").value
@@ -20,49 +13,103 @@ class ExcelManager:
     def change_cell_value_by_range(self, cell_address, new_value):
         self.sh.range(cell_address).value = new_value
 
-    def find_cell_by_value(self, wanted_value, columns_range=default_columns_range_value,
-                           rows_range=default_rows_range_value):
-        cells = self.get_cell_combinations(columns_range, rows_range)
-        for column, row in cells:
-            if self.get_value(column, row) == wanted_value:
-                return column, row
+    def find_cell_by_value(self, wanted_value, columns_range=None, rows_range=None):
+        if columns_range is None:
+            columns_range = self.default_columns_range_value
+        if rows_range is None:
+            rows_range = self.default_rows_range_value
+
+        for column in columns_range:
+            start_row, end_row = rows_range[0], rows_range[-1]
+            col_range_str = f"{column}{start_row}:{column}{end_row}"
+            values = self.sh.range(col_range_str).value
+
+            # Ensure it's always a list
+            if not isinstance(values, list):
+                values = [values]
+
+            for i, val in enumerate(values):
+                cell_text = str(val).strip() if isinstance(val, str) else val
+                if cell_text == wanted_value:
+                    return column, start_row + i
+
         return None, None
 
-    def get_value_on_the_right(self, wanted_value, rows_range=default_rows_range_value, n_column=1, row_offset=0, column_offset=0):
-        column_initial, search_row = self.find_cell_by_value(wanted_value, rows_range=rows_range)
-        if not column_initial:
-            return None
-        ascii_column_number = ord(column_initial) + n_column
-        return self.get_value(chr(ascii_column_number), search_row)
+    def get_value_on_the_right(self, wanted_value, rows_range=None, n_column=1, row_offset=0, column_offset=0):
+        if rows_range is None:
+            rows_range = self.default_rows_range_value
+
+        start_row = rows_range[0]
+        end_row = rows_range[-1]
+
+        # Dynamic range from class variable
+        col_start = self.default_columns_range_value[0]
+        col_end = self.default_columns_range_value[-1]
+
+        range_str = f"{col_start}{start_row}:{col_end}{end_row}"
+        values = self.sh.range(range_str).value
+
+        if not isinstance(values[0], list):
+            values = [values]
+
+        for i, row in enumerate(values):
+            for j, val in enumerate(row):
+                cell = str(val).strip() if isinstance(val, str) else val
+                if cell == wanted_value:
+                    target_col = j + n_column + column_offset
+                    target_row = i + row_offset
+                    if 0 <= target_col < len(row) and 0 <= target_row < len(values):
+                        return values[target_row][target_col]
+                    else:
+                        return None
+        return None
 
     def get_n_rows_after_value(self, wanted_value, number_of_rows_after_value,
-                               columns_range=default_columns_range_value, rows_range=default_rows_range_value):
-        start_value = wanted_value
-        range_start = 0
-        cells = self.get_cell_combinations(columns_range, rows_range)
-        for column_letter, row_number in cells:
-            cell_value = self.get_value(column_letter, row_number)
-            if cell_value == start_value:
-                range_start = row_number
-                break
-        if range_start:
-            return list(range(range_start, range_start + number_of_rows_after_value))
+                               columns_range=None, rows_range=None):
+        if columns_range is None:
+            columns_range = self.default_columns_range_value
+        if rows_range is None:
+            rows_range = self.default_rows_range_value
+
+        start_row = rows_range[0]
+        end_row = rows_range[-1]
+
+        for column in columns_range:
+            col_range_str = f"{column}{start_row}:{column}{end_row}"
+            values = self.sh.range(col_range_str).value
+
+            # Ensure list (sometimes single-cell returns just a value)
+            if not isinstance(values, list):
+                values = [values]
+
+            for i, cell_value in enumerate(values):
+                cell_text = str(cell_value).strip() if isinstance(cell_value, str) else cell_value
+                if cell_text == wanted_value:
+                    found_row = start_row + i
+                    return list(range(found_row, found_row + number_of_rows_after_value))
+
         return []
 
-    def get_rows_range_between_values(self, wanted_values_tuple, columns_range=default_columns_range_value,
+    def get_rows_range_between_values(self, wanted_values_tuple, columns_range=["A"],
                                       rows_range=default_rows_range_value):
         start_value, end_value = wanted_values_tuple
-        range_start, range_end = 0, 0
-        for column_letter in columns_range:
-            for row_number in rows_range:
-                cell_value = self.get_value(column_letter, row_number)
-                if isinstance(cell_value, str):
-                    cell_value = cell_value.strip()
-                if cell_value == start_value:
-                    range_start = row_number
-                elif cell_value == end_value:
-                    range_end = row_number
+        range_start = range_end = 0
+
+        for column in columns_range:
+            # Fetch entire column values in one call
+            col_range = f"{column}{rows_range[0]}:{column}{rows_range[-1]}"
+            values = self.sh.range(col_range).value
+
+            # Strip and search efficiently
+            cleaned_values = [str(val).strip() if isinstance(val, str) else val for val in values]
+            for i, val in enumerate(cleaned_values):
+                if val == start_value and not range_start:
+                    range_start = rows_range[0] + i
+                elif val == end_value and not range_end:
+                    range_end = rows_range[0] + i
+                if range_start and range_end:
                     break
+
         if range_start and range_end:
             return list(range(range_start, range_end))
         return []
@@ -84,15 +131,29 @@ class ExcelManager:
     def subdivide_range_in_contain_word(self, column_letter, row_range, word):
         result = []
         subrange_start = None
-        for row in row_range:
-            if word in (str(self.get_value(column_letter, row)) or ""):
+
+        # Read the full column range in one call
+        col_range_str = f"{column_letter}{row_range[0]}:{column_letter}{row_range[-1]}"
+        values = self.sh.range(col_range_str).value
+
+        # Normalize to a list (Excel may return a single value for 1 row)
+        if not isinstance(values, list):
+            values = [values]
+
+        # Strip and search
+        for i, cell_value in enumerate(values):
+            cell_text = str(cell_value).strip() if cell_value is not None else ""
+            if word in cell_text:
+                row = row_range[0] + i
                 if subrange_start is None:
                     subrange_start = row
                 else:
                     result.append(list(range(subrange_start, row)))
                     subrange_start = row
+
         if subrange_start is not None:
             result.append(list(range(subrange_start, row_range[-1] + 1)))
+
         return result
 
     def cell_is_filled(self, column, row):
@@ -188,3 +249,22 @@ class ExcelManager:
         start_row_number = max(start_row_number, 1)  # Ensure the start row is at least 1
         range_to_clear = f"A{start_row_number}:XFD{last_row + offset}"  # XFD is the last column in Excel
         self.sh.range(range_to_clear).clear_contents()
+
+
+class ExcelManager:
+    def __init__(self, file_path, read_only=True):
+        self.app = xw.App(visible=False)
+        self.wb = self.app.books.open(file_path, read_only=read_only)
+
+    def get_sheet(self, sheet_name):
+        return ExcelSheetManager(self.wb.sheets[sheet_name])
+
+    def close(self):
+        self.wb.close()
+        self.app.quit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

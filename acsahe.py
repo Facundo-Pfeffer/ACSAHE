@@ -42,7 +42,7 @@ class ACSAHE:
         self.exe_path = self.get_base_path()
         self.app_gui = app_gui
         file_folder = '\\'.join(file_path.split('/')[:-1])
-        self.icon_path_ico = f"{self.exe_path}\\build\\images\\Logo_H.ico"  ##TODO change when app structure is ready
+        self.icon_path_ico = f"{self.exe_path}\\build\\images\\Logo_H.ico"
         self.start_process()
 
 
@@ -125,7 +125,6 @@ class ACSAHE:
             mensaje_extra = self.obtener_mensaje_hoja_de_resultados(solucion_geometrica)
             self.update_ui(f"ACSAHE ha finalizado!{mensaje_extra}", progress_bar_value=100)
             QApplication.processEvents()
-            solucion_geometrica.cerrar_hojas_de_calculo()
             time.sleep(1 if mensaje_extra else 0)
             # Ensure the window is visible, at the front, and active
             time.sleep(1 if not mensaje_extra else 5)

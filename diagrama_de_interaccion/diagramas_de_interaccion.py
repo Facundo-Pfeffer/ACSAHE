@@ -356,7 +356,7 @@ class DiagramaInteraccion2D:
 
     def mostrar_resultado(self, blanco_y_negro=False):
         fig = self.construir_grafica_resultado(arcoiris=True, blanco_y_negro=blanco_y_negro)
-        self.geometria.diagrama_interaccion_wb.add_plot(fig, name="di", location="L30")
+        self.geometria.diagrama_interaccion_sheet.add_plot(fig, name="di", location="L30")
         plt.show()
 
     @staticmethod
