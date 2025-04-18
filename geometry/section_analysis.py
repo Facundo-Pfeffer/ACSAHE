@@ -3,7 +3,6 @@ import traceback
 from tkinter import messagebox
 
 import math
-import matplotlib.pyplot as plt
 import numpy as np
 
 import plotly.graph_objects as go
@@ -220,32 +219,32 @@ class ResolucionGeometrica:
     def obtener_def_de_pretensado_inicial(self):
         value = self.ingreso_datos_sheet.get_value("E", 8)
         return value / 1000
-
-    def construir_grafica_seccion(self):
-        """Muestra la sección obtenida luego del proceso de discretización."""
-        plt.rcParams["font.family"] = "Arial"
-        fig, ax = plt.subplots()
-        self.EA.cargar_barras_como_circulos_para_mostrar(ax)
-        self.EAP.cargar_barras_como_circulos_para_mostrar(ax)
-        self.seccion_H.mostrar_contornos_2d(ax)
-        self.seccion_H.mostrar_discretizacion_2d(ax)
-        self.mostrar_plano_de_carga_y_ejes(ax)
-        plt.title(
-            f"Discretización: {self.nivel_disc}\n{' '.join([f'{k}={v}' for k, v in self.obtener_discretizacion().items() if v])}\n"
-            f"Plano de carga λ={self.angulo_plano_de_carga_esperado}°",
-            fontsize=11, horizontalalignment='center', fontweight='bold')
-        plt.axis('equal')
-        ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=10, fontweight='bold')
-        ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=10, fontweight='bold')
-        plt.xticks(fontsize=10)
-        plt.yticks(fontsize=10)
-        self.diagrama_interaccion_sheet.sh.pictures.add(fig,
-                                                        name="geometry",
-                                                        update=True,
-                                                        left=self.diagrama_interaccion_sheet.sh.range("A32").left,
-                                                        top=self.diagrama_interaccion_sheet.sh.range("A32").top,
-                                                        export_options={"dpi": 300,
-                                                                     "bbox_inches": 'tight'})
+    #
+    # def construir_grafica_seccion(self):
+    #     """Muestra la sección obtenida luego del proceso de discretización."""
+    #     plt.rcParams["font.family"] = "Arial"
+    #     fig, ax = plt.subplots()
+    #     self.EA.cargar_barras_como_circulos_para_mostrar(ax)
+    #     self.EAP.cargar_barras_como_circulos_para_mostrar(ax)
+    #     self.seccion_H.mostrar_contornos_2d(ax)
+    #     self.seccion_H.mostrar_discretizacion_2d(ax)
+    #     self.mostrar_plano_de_carga_y_ejes(ax)
+    #     plt.title(
+    #         f"Discretización: {self.nivel_disc}\n{' '.join([f'{k}={v}' for k, v in self.obtener_discretizacion().items() if v])}\n"
+    #         f"Plano de carga λ={self.angulo_plano_de_carga_esperado}°",
+    #         fontsize=11, horizontalalignment='center', fontweight='bold')
+    #     plt.axis('equal')
+    #     ax.set_xlabel("Dimensiones en Horizontal [cm]", loc="center", fontsize=10, fontweight='bold')
+    #     ax.set_ylabel("Dimensiones en Vertical [cm]", loc="center", fontsize=10, fontweight='bold')
+    #     plt.xticks(fontsize=10)
+    #     plt.yticks(fontsize=10)
+    #     self.diagrama_interaccion_sheet.sh.pictures.add(fig,
+    #                                                     name="geometry",
+    #                                                     update=True,
+    #                                                     left=self.diagrama_interaccion_sheet.sh.range("A32").left,
+    #                                                     top=self.diagrama_interaccion_sheet.sh.range("A32").top,
+    #                                                     export_options={"dpi": 300,
+    #                                                                  "bbox_inches": 'tight'})
 
     def obtener_discretizacion(self):
         return {
@@ -254,43 +253,27 @@ class ResolucionGeometrica:
             "Δr": f"{round(self.seccion_H.dr, 2)} cm" if self.seccion_H.dr else None,
             "Δθ": f"{round(self.seccion_H.d_ang, 2)}°" if self.seccion_H.d_ang else None}
 
-    def mostrar_seccion(self, usar_plotly=True, **kwargs):
-        if usar_plotly is False:
-            self.construir_grafica_seccion()
-        else:
-            self.construir_grafica_seccion_plotly()
-        plt.show()
-
-    def guardar_seccion(self):
-        print("Construyendo Gráfica de la sección")
-        path = f"Resultados/{self.file_name}"
-        if not os.path.exists(path):
-            os.makedirs(path)
-        self.construir_grafica_seccion()
-        print(f"Guardando sección en {path}")
-        plt.savefig(f"{path}/Sección.png")
-
-    def mostrar_plano_de_carga_y_ejes(self, ax):
-        self.angulo_plano_de_carga_esperado = self.lista_ang_plano_de_carga[0]
-        axis_color = "blue"
-        x1, x2, y1, y2 = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG, self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
-        x1p, y1p, x2p, y2p = self.plano_de_carga()
-        linea_plano_de_carga = Segment(Node(x1p, y1p),
-                                       Node(x2p, y2p))
-        linea_plano_de_carga.plot(linewidth=3, c="k", linestyle="dashed")
-        arrow_size = ((x2 - x1) / 100 + (y2 - y1) / 100) / 4
-        plt.arrow(x1, 0, x2 - x1 + arrow_size * 7, 0, width=arrow_size, color=axis_color, alpha=1)
-        plt.arrow(0, y1, 0, y2 - y1 + arrow_size * 7, width=arrow_size, color=axis_color, alpha=1)
-        plt.text(x2 + (x2 - x1) / 20,
-                 (y2 - y1) / 50,
-                 f"X",
-                 fontsize=12,
-                 c=axis_color)
-        plt.text(0 + (x2 - x1) / 20,
-                 y2 + (y2 - y1) / 50,
-                 f"Y",
-                 fontsize=12,
-                 c=axis_color)
+    # def mostrar_plano_de_carga_y_ejes(self, ax):
+    #     self.angulo_plano_de_carga_esperado = self.lista_ang_plano_de_carga[0]
+    #     axis_color = "blue"
+    #     x1, x2, y1, y2 = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG, self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
+    #     x1p, y1p, x2p, y2p = self.plano_de_carga()
+    #     linea_plano_de_carga = Segment(Node(x1p, y1p),
+    #                                    Node(x2p, y2p))
+    #     linea_plano_de_carga.plot(linewidth=3, c="k", linestyle="dashed")
+    #     arrow_size = ((x2 - x1) / 100 + (y2 - y1) / 100) / 4
+    #     plt.arrow(x1, 0, x2 - x1 + arrow_size * 7, 0, width=arrow_size, color=axis_color, alpha=1)
+    #     plt.arrow(0, y1, 0, y2 - y1 + arrow_size * 7, width=arrow_size, color=axis_color, alpha=1)
+    #     plt.text(x2 + (x2 - x1) / 20,
+    #              (y2 - y1) / 50,
+    #              f"X",
+    #              fontsize=12,
+    #              c=axis_color)
+    #     plt.text(0 + (x2 - x1) / 20,
+    #              y2 + (y2 - y1) / 50,
+    #              f"Y",
+    #              fontsize=12,
+    #              c=axis_color)
 
     def plano_de_carga(self):
         xmin, xmax, ymin, ymax = self.min_x_seccion - self.XG, self.max_x_seccion - self.XG, self.min_y_seccion - self.YG, self.max_y_seccion - self.YG
@@ -321,33 +304,33 @@ class ResolucionGeometrica:
             puntos = (0, ymin_margin, 0, ymax_margin)
         return puntos
 
-    def mostrar_planos_de_deformacion(self):
-        plt.rcParams["font.family"] = "Times New Roman"
-        lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
-        fig, ax = plt.subplots()
-        ax.plot([0, 0], [1, -1], c="k", linewidth=7, zorder=10, linestyle="dashed")  # Plano 0
-        for p_def in self.planos_de_deformacion:
-            plt.title("Planos de Deformación Límite", fontsize=16)
-            tipo = p_def[2]
-            if tipo >= 0:
-                c = self.obtener_color_kwargs(p_def, arcoiris=True)
-                ax.plot([-p_def[0] * 1000, -p_def[1] * 1000], [1, -1],
-                        # c=lista_colores[tipo],
-                        linewidth=2, zorder=1, alpha=1, **c)
-                # ax.add_patch(Rectangle((3,-1),2,2, facecolor="grey"))
-        ax.set_xlabel("Deformación [‰]", loc="center", fontsize=8, fontweight='bold')
-        ax.tick_params(axis='x', labelsize=14)
-        ax.tick_params(axis='y', labelsize=14)
-        ax.set_ylabel("Altura de la sección para el plano estudiado (%H)", loc="center", fontsize=8, fontweight='bold')
-        plt.locator_params(axis='y', nbins=2)
-        labels = [item.get_text() for item in ax.get_yticklabels()]
-        labels[3] = "H/2"
-        labels[1] = "-H/2"
-        ax.set_yticklabels(labels)
-        plt.xticks([3, -self.deformacion_maxima_de_acero * 1000], ["Aplastamiento H° 3‰", "Rotura acero pasivo/activo"],
-                   rotation='vertical')
-        # ax.set_facecolor((0, 0, 0))
-        self.diagrama_interaccion_sheet.add_plot(fig, "L24", name="planos")
+    # def mostrar_planos_de_deformacion(self):
+    #     plt.rcParams["font.family"] = "Times New Roman"
+    #     lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
+    #     fig, ax = plt.subplots()
+    #     ax.plot([0, 0], [1, -1], c="k", linewidth=7, zorder=10, linestyle="dashed")  # Plano 0
+    #     for p_def in self.planos_de_deformacion:
+    #         plt.title("Planos de Deformación Límite", fontsize=16)
+    #         tipo = p_def[2]
+    #         if tipo >= 0:
+    #             c = self.obtener_color_kwargs(p_def, arcoiris=True)
+    #             ax.plot([-p_def[0] * 1000, -p_def[1] * 1000], [1, -1],
+    #                     # c=lista_colores[tipo],
+    #                     linewidth=2, zorder=1, alpha=1, **c)
+    #             # ax.add_patch(Rectangle((3,-1),2,2, facecolor="grey"))
+    #     ax.set_xlabel("Deformación [‰]", loc="center", fontsize=8, fontweight='bold')
+    #     ax.tick_params(axis='x', labelsize=14)
+    #     ax.tick_params(axis='y', labelsize=14)
+    #     ax.set_ylabel("Altura de la sección para el plano estudiado (%H)", loc="center", fontsize=8, fontweight='bold')
+    #     plt.locator_params(axis='y', nbins=2)
+    #     labels = [item.get_text() for item in ax.get_yticklabels()]
+    #     labels[3] = "H/2"
+    #     labels[1] = "-H/2"
+    #     ax.set_yticklabels(labels)
+    #     plt.xticks([3, -self.deformacion_maxima_de_acero * 1000], ["Aplastamiento H° 3‰", "Rotura acero pasivo/activo"],
+    #                rotation='vertical')
+    #     # ax.set_facecolor((0, 0, 0))
+    #     self.diagrama_interaccion_sheet.add_plot(fig, "L24", name="planos")
 
     def obtener_color_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]

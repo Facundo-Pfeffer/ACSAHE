@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import math
 from build.ext_utils.plotly_util import PlotlyUtil
 
@@ -32,13 +31,6 @@ class MatrizAceroPasivo(list):
             "y": 0.85,
             "groupclick": "toggleitem"},showlegend="true")
 
-    def cargar_barras_como_circulos_para_mostrar(self, ax):
-        lista_de_diametros = set()
-        for barra in self:
-            lista_de_diametros.add(barra.diametro)
-            circ = plt.Circle(xy=(barra.xg, barra.yg), radius=barra.diametro / 20, color='r', zorder=21)
-            ax.add_patch(circ)
-        return ax
 
     def cuantia_geometrica(self, area_bruta_hormigon, output_str=False):
         if area_bruta_hormigon == 0:
@@ -81,14 +73,6 @@ class MatrizAceroActivo(list):
             "yref": "container",
             "y": 0.45,
             "groupclick": "toggleitem"})
-
-    def cargar_barras_como_circulos_para_mostrar(self, ax):
-        lista_de_areas = set()
-        for barra in self:
-            lista_de_areas.add(barra.area)
-            radio_equivalente = (barra.area / math.pi) ** 0.5
-            circ = plt.Circle(xy=(barra.xg, barra.yg), radius=radio_equivalente, color='b', zorder=20)
-            ax.add_patch(circ)
 
     def cuantia_geometrica(self, area_bruta_hormigon, output_str=False):
         if area_bruta_hormigon == 0:

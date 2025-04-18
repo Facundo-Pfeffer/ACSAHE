@@ -4,16 +4,12 @@ import traceback
 from tkinter import messagebox
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import matplotlib.pyplot as plt
 import math
 import numpy as np
 from scipy.optimize import fsolve
-
-
 from functools import lru_cache
-from geometry.section_analysis import ResolucionGeometrica
 
+from geometry.section_analysis import ResolucionGeometrica
 
 diferencia_admisible = 0.5
 
@@ -316,44 +312,6 @@ class DiagramaInteraccion2D:
         azul = int(azul * 255)
 
         return [rojo, verde, azul]
-
-    def construir_grafica_resultado(self, arcoiris=True, blanco_y_negro=False):
-        plt.rcParams["font.family"] = "Times New Roman"
-        X = []
-        Y = []
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1)
-        plt.title(f"DIAGRAMA DE INTERACCIÓN\nPara ángulo de plano de carga λ={self.angulo_plano_de_carga_esperado}°",
-                  fontsize=12, fontweight='bold')
-        plt.xticks(ha='right', fontsize=10)
-        ax.tick_params(axis='both', which='major', labelsize=10)
-        ax.set_xlabel("M[kNm]", loc="right", fontsize=10, fontweight='bold')
-        ax.set_ylabel("N[kN]", loc="top", rotation=0, rotation_mode="anchor", fontsize=10,
-                      fontweight='bold')
-        self.preparar_eje_pyplot(ax)
-
-        for resultado in self.lista_resultados:
-            sumF = resultado["sumF"]
-            M = resultado["M"]
-            plano_def = resultado["plano_deformacion"]
-
-            x = M / 100  # Pasaje de kNcm a kNm
-            y = -sumF  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
-            X.append(x)
-            Y.append(y)
-            color_kwargs = self.geometria.obtener_color_kwargs(plano_def,
-                                                               arcoiris=arcoiris,
-                                                               blanco_y_negro=blanco_y_negro)
-            plt.scatter(x, y,
-                        marker=".",
-                        s=100,
-                        **color_kwargs)
-        return fig
-
-    def mostrar_resultado(self, blanco_y_negro=False):
-        fig = self.construir_grafica_resultado(arcoiris=True, blanco_y_negro=blanco_y_negro)
-        self.geometria.diagrama_interaccion_sheet.add_plot(fig, name="di", location="L30")
-        plt.show()
 
     @staticmethod
     def preparar_eje_pyplot(ax):

@@ -1,6 +1,5 @@
-import matplotlib.pyplot as plt
 from functools import lru_cache
-import math
+import plotly.graph_objects as go
 
 
 class BarraAceroPretensado():
@@ -67,13 +66,26 @@ class BarraAceroPretensado():
         x = []
         y = []
         min_delta = 8000
+
         for x_v in particion_e:
-            x.append(x_v/100000)
-            y_v = self.relacion_constitutiva(x_v/100000)
-            if abs(y_v - 1000) < abs(min_delta):
-                min_delta = y_v - 1000
-            y.append(y_v)
-        plt.scatter(x, y, color="r", s=3, label="")
-        plt.show()
+            x_val = x_v / 100000
+            x.append(x_val)
+            y_val = self.relacion_constitutiva(x_val)
+            if abs(y_val - 1000) < abs(min_delta):
+                min_delta = y_val - 1000
+            y.append(y_val)
 
-
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=y,
+            mode='markers',
+            marker=dict(color='red', size=3),
+            showlegend=False
+        ))
+        fig.update_layout(
+            title="Relación Constitutiva",
+            xaxis_title="Deformación",
+            yaxis_title="Tensión",
+        )
+        fig.show()

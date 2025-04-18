@@ -62,11 +62,11 @@ class ACSAHE:
 
     def start_process(self):
         try:
-            solucion_geometrica = ResolucionGeometrica(file_path=self.file_path)
-            self.solucion_geometrica = solucion_geometrica
+            geometric_solution = ResolucionGeometrica(file_path=self.file_path)
+            self.solucion_geometrica = geometric_solution
 
-            lista_ang = sorted(solucion_geometrica.lista_ang_plano_de_carga)
-            self.steps = 2 + len(lista_ang)
+            loading_path_angle_list = sorted(geometric_solution.lista_ang_plano_de_carga)
+            self.step_number_list = 2 + len(loading_path_angle_list)
 
             self.update_ui("Construyendo Geometría...", 5)
             QApplication.processEvents()
@@ -75,29 +75,29 @@ class ACSAHE:
             lista_x_total, lista_y_total, lista_z_total, lista_color, lista_text_total, lista_color_total = [], [], [], [], [], []
             lista_x_total_sin_phi, lista_y_total_sin_phi, lista_z_total_sin_phi = [], [], []
 
-            for step in range(2, self.steps + 1):
-                if step < 2 + len(lista_ang):
-                    angulo_plano_de_carga = lista_ang[step - 2]
+            for step in range(2, self.step_number_list + 1):
+                if step < 2 + len(loading_path_angle_list):
+                    loading_path_angle = loading_path_angle_list[step - 2]
                     self.update_ui(
-                        self.progress_bar_messages["Medio"].format(plano_de_carga=angulo_plano_de_carga))
+                        self.progress_bar_messages["Medio"].format(plano_de_carga=loading_path_angle))
 
-                    solucion_parcial = DiagramaInteraccion2D(
-                        angulo_plano_de_carga if angulo_plano_de_carga != -1 else 0.00,
-                        solucion_geometrica)
+                    partial_2D_solution = DiagramaInteraccion2D(
+                        loading_path_angle if loading_path_angle != -1 else 0.00,
+                        geometric_solution)
 
-                    coordenadas, lista_color_parcial, plano_de_def = solucion_geometrica.coordenadas_de_puntos_en_3d(
-                        solucion_parcial.lista_resultados)
+                    coordenadas, lista_color_parcial, plano_de_def = geometric_solution.coordenadas_de_puntos_en_3d(
+                        partial_2D_solution.lista_resultados)
 
                     lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial = coordenadas
-                    es_phi_constante = isinstance(solucion_geometrica.problema["phi_variable"], float)
-                    if solucion_geometrica.problema["tipo"] == "3D":
+                    es_phi_constante = isinstance(geometric_solution.problema["phi_variable"], float)
+                    if geometric_solution.problema["tipo"] == "3D":
                         texto = self.hover_text_3d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
-                                                   angulo_plano_de_carga,
+                                                   loading_path_angle,
                                                    es_phi_constante)
                     else:
                         texto = self.hover_text_2d(lista_x_parcial, lista_y_parcial, lista_z_parcial, lista_phi_parcial,
-                                                   angulo_plano_de_carga, es_phi_constante)
-                    data_subsets[str(angulo_plano_de_carga)] = {
+                                                   loading_path_angle, es_phi_constante)
+                    data_subsets[str(loading_path_angle)] = {
                         "x": lista_x_parcial.copy(),
                         "y": lista_y_parcial.copy(),
                         "z": lista_z_parcial.copy(),
@@ -113,16 +113,16 @@ class ACSAHE:
                     lista_z_total_sin_phi.extend((np.array(lista_z_parcial) / np.array(lista_phi_parcial)).tolist())
                     lista_text_total.extend(texto)
                     lista_color_total.extend(lista_color_parcial)
-                    self.update_ui(progress_bar_value=int(step / self.steps * 100))
+                    self.update_ui(progress_bar_value=int(step / self.step_number_list * 100))
                 else:
-                    self.update_ui(self.progress_bar_messages["Ultimo"], int(step / self.steps * 100))
-                    self.construir_resultado_html(solucion_geometrica, lista_x_total, lista_y_total, lista_z_total,
+                    self.update_ui(self.progress_bar_messages["Ultimo"], int(step / self.step_number_list * 100))
+                    self.construir_resultado_html(geometric_solution, lista_x_total, lista_y_total, lista_z_total,
                                                   lista_text_total, lista_color_total, data_subsets)
         except Exception as e:
             traceback.print_exc()
             print(e)
         finally:
-            mensaje_extra = self.obtener_mensaje_hoja_de_resultados(solucion_geometrica)
+            mensaje_extra = self.obtener_mensaje_hoja_de_resultados(geometric_solution)
             self.update_ui(f"ACSAHE ha finalizado!{mensaje_extra}", progress_bar_value=100)
             QApplication.processEvents()
             time.sleep(1 if mensaje_extra else 0)

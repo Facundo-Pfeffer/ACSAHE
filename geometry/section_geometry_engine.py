@@ -2,10 +2,7 @@ import copy
 import math
 import random
 from typing import List
-
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Arc
 
 from build.ext_utils.plotly_util import PlotlyUtil
 
@@ -79,7 +76,8 @@ class Line(object):
 
     def show_line_pyplot(self):
         """Method useful for debugging."""
-        plt.plot([self.start_node.x, self.end_node.x], [self.start_node.y, self.end_node.y])
+        plotly_util = PlotlyUtil()
+        plotly_util.plotly_segmento(self.start_node, self.end_node)
 
     def __and__(self, otra_recta) -> Node or None:
         """Realiza la intersección de la recta con otra provista, en el plano.
@@ -132,11 +130,9 @@ class Segment(object):
             nodo_interseccion_rectas) else None
         return resultado
 
-    def plot(self, ax=None, **kwargs):
-        if ax is None:
-            plt.plot([self.start_node.x, self.end_node.x], [self.start_node.y, self.end_node.y], **kwargs)
-        else:
-            ax.plot([self.start_node.x, self.end_node.x], [self.start_node.y, self.end_node.y], **kwargs)
+    def plot(self, **kwargs):
+        plotly_util = PlotlyUtil()
+        plotly_util.plotly_segmento(self.start_node, self.end_node, **kwargs)
 
     def __and__(self, otro_segmento):
         result = self.recta_segmento & otro_segmento.recta_segmento  # Buscando intersección.
@@ -278,43 +274,6 @@ class Poligono(object):
         """Obtiene el índice del próximo elemento, dependiendo de valor_a_sumar"""
         i_punto = indice_punto_1 + valor_a_sumar
         return i_punto if i_punto < self.total_de_nodos else i_punto - self.total_de_nodos
-
-    def plot(self, indice_color=None,
-             espesor=None,
-             mostrar_centroide=False,
-             texto_a_mostrar=None,
-             tridimensional=False,
-             ec_plano_3d=None,
-             plt_3d=None,
-             transparencia=1,
-             ax=None):
-
-        color = random.choice(pyplot_colors_list) if indice_color is None else pyplot_colors_list[indice_color]
-        espesor = random.choice(thickness_list) if espesor is None else espesor
-        x = []
-        y = []
-        for segmento in self.segmentos_borde:
-            x.extend([segmento.start_node.x, segmento.end_node.x])
-            y.extend([segmento.start_node.y, segmento.end_node.y])
-
-        if not tridimensional:
-            plt.plot(x, y, c=color, alpha=transparencia, linewidth=espesor, zorder=0)
-        else:  # Figura 3d
-            z1 = [0] * len(x)
-            z2 = [ec_plano_3d(x[i], y[i]) for i in range(len(x))]
-            x = x * 2
-            y = y * 2
-            z = z1 + z2
-            for i in range(len(x) - 1):
-                x0, y0, z0 = [x[i], x[i + 1]], [y[i], y[i + 1]], [z[i], z[i + 1]]
-                plt_3d.plot(z0, x0, y0,
-                            c=color if i != len(x) / 2 - 1 else "w",
-                            alpha=transparencia, linewidth=espesor, zorder=0)
-
-        if mostrar_centroide:
-            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0, s=self.area/10)
-        if texto_a_mostrar:
-            plt.text(self.xg, self.yg, texto_a_mostrar)
 
     def obtener_poligono_interseccion(self, otro_poligono):
         """Obtiene el poligono que resulta de intersectar self con otro_poligono"""
@@ -526,36 +485,6 @@ class ElementoTrapecioCircular(object):
         self.nodos_extremos = self.obtener_nodos_extremos()
         self.segmentos_rectos = self.obtener_segmentos_rectos()
 
-    def plot(self, indice_color, espesor, ax, mostrar_centroide=False, transparencia=1.00):
-        # Coordenadas de los puntos del trapecio circular
-        color = random.choice(pyplot_colors_list) if indice_color is None else pyplot_colors_list[indice_color]
-        espesor = random.choice(thickness_list) if espesor is None else espesor
-        style_data = {"color": color, "linewidth": espesor, "alpha": transparencia}
-
-        arco_externo = Arc((self.xc, self.yc),
-                           2 * self.radio_externo,
-                           2 * self.radio_externo,
-                           theta1=self.angulo_inicial,
-                           theta2=self.angulo_final,
-                           **style_data)
-        if self.radio_interno > 0:
-            arco_interno = Arc((self.xc, self.yc),
-                               2 * self.radio_interno,
-                               2 * self.radio_interno,
-                               theta1=self.angulo_inicial,
-                               theta2=self.angulo_final,
-                               **style_data)
-            ax.add_patch(arco_interno)
-
-        ax.add_patch(arco_externo)
-        if self.segmentos_rectos is not None:
-            self.segmentos_rectos[0].plot(ax, **style_data)
-            self.segmentos_rectos[1].plot(ax, **style_data)
-        if mostrar_centroide:
-            plt.scatter(self.xg, self.yg, c=color, marker=".", zorder=0, s=self.area/10)
-        return ax
-        # Crear la figura y el gráfico
-
     def plotly_elemento(self, fig, mostrar_centroide=False, transparencia=1):
         PlotlyUtil.plot_trapecio_circular(trapecio_circular=self,
                                           fig=fig,
@@ -617,13 +546,6 @@ class ContornoCircular(ElementoTrapecioCircular):
             if not self.nodo_en_elemento(elemento_diferencial.nodo_centroide):  # Fuera del semiplano del contorno.
                 lista_de_elementos.remove(elemento_diferencial)
         return lista_de_elementos
-
-    def mostrar_contorno_y_discretizacion(self, lista_elementos):
-        # Contorno
-        fig, ax = plt.subplots()
-        for elemento in lista_elementos:
-            elemento.plot(ax)
-        plt.show()
 
     def determinar_si_nodo_pertence_a_contorno(self, nodo: Node):
         distancia_centro = self.nodo_centro - nodo
@@ -699,18 +621,6 @@ class Contorno(Poligono):
                     lista_de_elementos.remove(elemento_diferencial)
         return lista_de_elementos
 
-    def mostrar_contorno_y_discretizacion(self, lista_elementos):
-        # Contorno
-        X = [nodo.x for nodo in self.nodos_extremos]
-        Y = [nodo.y for nodo in self.nodos_extremos]
-        plt.plot(X, Y)
-        for elemento in lista_elementos:
-            elemento.plot(indice_color=0, espesor=0.5)
-        self.plot(indice_color=1)
-        plt.title("Contorno y Discretizacion - pre eliminar elementos negativos")
-        plt.show()
-
-
 class SeccionArbitraria(object):
     """Una Sección Arbitraria será la combinación de objetos tipo Contorno.
     Los elementos con signo positivo representan regiones de alma llena mientras que las negativas regiones vacías."""
@@ -767,18 +677,6 @@ class SeccionArbitraria(object):
 
     def mostrar_discretizacion_2d(self, ax):
         [elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.6) for elemento in self.elementos]
-
-    def mostrar_contornos_3d(self, ecuacion_plano_a_desplazar=None):
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
-        for contorno_negativo in self.contornos_negativos:
-            contorno_negativo.plot(
-                indice_color=2, espesor=2, tridimensional=True, ec_plano_3d=ecuacion_plano_a_desplazar,
-                plt_3d=ax)
-        for contorno_positivo in self.contornos_positivos:
-            contorno_positivo.plot(
-                indice_color=1, espesor=2, tridimensional=True, ec_plano_3d=ecuacion_plano_a_desplazar,
-                plt_3d=ax)
 
     def obtener_baricentro_y_area(self):
         area_total = 0

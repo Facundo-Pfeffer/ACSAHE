@@ -1,6 +1,6 @@
-import matplotlib.pyplot as plt
 import math
 from functools import lru_cache
+import plotly.graph_objects as go
 
 
 class BarraAceroPasivo():
@@ -38,10 +38,20 @@ class BarraAceroPasivo():
 
     def mostrar_relacion_constitutiva(self):
         particion_e = range(-1000, 1000)
-        x = []
-        y = []
-        for x_v in particion_e:
-            x.append(x_v/100000)
-            y.append(self.relacion_constitutiva(x_v/100000))
-        plt.scatter(x, y, color="r", s=3, label="")
-        plt.show()
+        x = [e / 100000 for e in particion_e]
+        y = [self.relacion_constitutiva(e_val) for e_val in x]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=y,
+            mode='markers',
+            marker=dict(color='red', size=3),
+            showlegend=False
+        ))
+        fig.update_layout(
+            title="Relación Constitutiva",
+            xaxis_title="Deformación",
+            yaxis_title="Tensión",
+        )
+        fig.show()

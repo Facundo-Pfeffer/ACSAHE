@@ -245,7 +245,7 @@ class PlotlyUtil(object):
                           opacity=transparencia)
 
     @staticmethod
-    def plotly_segmento(nodo1, nodo2, color, espesor, transparencia, **kwargs):
+    def plotly_segmento(nodo1, nodo2, color, espesor=2, transparencia=0.9, **kwargs):
         x = [nodo1.x, nodo2.x]
         y = [nodo1.y, nodo2.y]
 
