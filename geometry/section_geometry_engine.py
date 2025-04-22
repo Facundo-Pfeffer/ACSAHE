@@ -4,7 +4,7 @@ import random
 from typing import List
 import numpy as np
 
-from build.ext_utils.plotly_util import PlotlyUtil
+from build.utils.plotly_engine import ACSAHEPlotlyEngine
 
 TOLERANCE = 10 ** -10
 pyplot_colors_list = ["r", "b", "g", "c", "m", "y", "k"]
@@ -49,6 +49,8 @@ class Line(object):
         self.y = lambda x: -self.c / self.b - self.a / self.b * x
         self.x = lambda y: -self.c / self.a - self.b / self.a * y
 
+    def equation(self, node: Node):
+        return self.a*node.x + self.b*node.y + self.c
 
     def distancia_a_nodo_v(self, node):
         return abs(node.y + (self.c + self.a * node.x) / self. b) if self.b != 0 else None
@@ -64,6 +66,10 @@ class Line(object):
     def distance_to_node(self, node: Node) -> float:
         return self.equation(node) / math.hypot(self.a, self.b)
 
+    def is_node_in_line(self, node: Node) -> bool:
+        distance_to_node = self.distance_to_node(node)
+        return abs(distance_to_node) < TOLERANCE
+
     @staticmethod
     def _get_implicit_eq_params(start_node, end_node):
         """Returns a, b, c parameters for the implicit line equation ax + by + c = 0"""
@@ -76,7 +82,7 @@ class Line(object):
 
     def show_line_pyplot(self):
         """Method useful for debugging."""
-        plotly_util = PlotlyUtil()
+        plotly_util = ACSAHEPlotlyEngine()
         plotly_util.plotly_segmento(self.start_node, self.end_node)
 
     def __and__(self, otra_recta) -> Node or None:
@@ -85,21 +91,41 @@ class Line(object):
         :return Nodo de intersección or None si no se encuentran"""
         x1, y1, x2, y2 = self.start_node.x, self.start_node.y, self.end_node.x, self.end_node.y
         x3, y3, x4, y4 = otra_recta.start_node.x, otra_recta.start_node.y, otra_recta.end_node.x, otra_recta.end_node.y
-        det = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)  # Determinante de la matriz de coordenadas
-        if -1 * TOLERANCE <= det <= TOLERANCE:  # Cuando den tiende a 0, las rectas son paralelas, no hay intersección.
+        det = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if -1 * TOLERANCE <= det <= TOLERANCE:  # When den approaches 0, the lines are parallel (no intersection).
             return None
-        # Se aplica la fórmula de Cramer para resolver el sistema de ecuaciones lineal.
+        # Cramer's law for solving the linear equation system.
         x = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / det
         y = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / det
         return Node(x, y)
+
+    def __floordiv__(self, other):
+        """True if lines are parallel"""
+        intersection = self & other
+        if intersection is None:
+            return True
+        return False
+
+class Vector(object):
+    def __init__(self, start_node, end_node):
+        self.a = end_node.x-start_node.x
+        self.b = end_node.y-start_node.y
+        self.modulus = math.sqrt(self.b**2 + self.a**2)
+        self.not_null = self.modulus > TOLERANCE
+        self.start_node = start_node
+
+    def __mul__(self, other_vector):
+        """Scalar product."""
+        return self.a*other_vector.a + self.b*other_vector.b
 
 
 class Segment(object):
     def __init__(self, start_node: Node, end_node: Node):
         self.start_node = start_node
         self.end_node = end_node
-        self.recta_segmento = Line(start_node, end_node)
-        self.extremos_x, self.extremos_y = self.extremos_segmento()
+        self.segment_line = Line(start_node, end_node)
+        self.extremos_x, self.extremos_y = self._get_segment_endpoints_ranges()
+        self.vector = Vector(start_node, end_node)
 
     def obtener_parametros_ecuacion_recta(self):
         x1, y1 = self.start_node.x, self.start_node.y
@@ -108,39 +134,98 @@ class Segment(object):
         b = x2 - x1
         c = y2 * (x1 - x2) + (y2 - y1) * x2
         return a, b, c
+    
+    def is_node_endpoint(self, other_node):
+        return any(other_node == self_node for self_node in [self.start_node, self.end_node])
 
-    def determinar_si_nodo_esta_en_rango(self, nodo):
+    def is_node_in_segment_range(self, nodo):
         xmin, xmax = self.extremos_x
         ymin, ymax = self.extremos_y
         return xmin - TOLERANCE <= nodo.x <= xmax + TOLERANCE and ymin - TOLERANCE <= nodo.y <= ymax + TOLERANCE
 
-    def determinar_si_nodo_pertenece_a_segmento(self, nodo):
-        return self.recta_segmento.line_implicit_equation(nodo) == 0 and self.determinar_si_nodo_esta_en_rango(nodo)
+    def node_belongs_to_segment(self, nodo):
+        return self.segment_line.line_implicit_equation(nodo) == 0 and self.is_node_in_segment_range(nodo)
 
-    def extremos_segmento(self):
-        extramos_x = (min(self.start_node.x, self.end_node.x), max(self.start_node.x, self.end_node.x))
-        extramos_y = (min(self.start_node.y, self.end_node.y), max(self.start_node.y, self.end_node.y))
-        return extramos_x, extramos_y
+    def _get_segment_endpoints_ranges(self):
+        x_endpoints = (min(self.start_node.x, self.end_node.x), max(self.start_node.x, self.end_node.x))
+        y_endpoints = (min(self.start_node.y, self.end_node.y), max(self.start_node.y, self.end_node.y))
+        return x_endpoints, y_endpoints
 
-    def obtener_interseccion_recta(self, recta):
-        nodo_interseccion_rectas = recta & self.recta_segmento
-        if not nodo_interseccion_rectas:  # Paralelas
+    def get_intersection_w_line(self, line):
+        intersection_node = line & self.segment_line
+        if not intersection_node:  # Paralelas
             return None
-        resultado = nodo_interseccion_rectas if self.determinar_si_nodo_esta_en_rango(
-            nodo_interseccion_rectas) else None
-        return resultado
+        result = intersection_node if self.is_node_in_segment_range(
+            intersection_node) else None
+        return result
 
     def plot(self, **kwargs):
-        plotly_util = PlotlyUtil()
+        plotly_util = ACSAHEPlotlyEngine()
         plotly_util.plotly_segmento(self.start_node, self.end_node, **kwargs)
 
-    def __and__(self, otro_segmento):
-        result = self.recta_segmento & otro_segmento.recta_segmento  # Buscando intersección.
-        if not result:
-            return None
-        return result if self.determinar_si_nodo_esta_en_rango(
-            result) and otro_segmento.determinar_si_nodo_esta_en_rango(result) else None
+    def segment_vectors_share_orientation(self, other_segment):
+        if not(self & other_segment is None):
+            print("Segments are not parallel hence they can't share orientation")
+            return False
+        scalar_vector_product = self.vector * other_segment.vector
+        return True if scalar_vector_product > 0 else False
 
+    def is_parallel_to_segment_and_shares_range(self, other_segment):
+        if not(self.segment_line & other_segment.segment_line is None):  # Segments are not parallel.
+            return False
+        if not self.segment_line.is_node_in_line(other_segment.start_node):  # Segments are parallel but not collinear.
+            return False
+        if not(any([self.is_node_in_segment_range(other_segment.start_node),  # Segments do not share range
+               self.is_node_in_segment_range(other_segment.end_node),
+                other_segment.is_node_in_segment_range(self.start_node),
+                other_segment.is_node_in_segment_range(self.start_node)])):
+            return False
+        return True
+
+    def __and__(self, otro_segmento):
+        """Segments intersection."""
+        result = self.segment_line & otro_segmento.segment_line
+        if self // otro_segmento:  # Parallel
+            return None
+        return result if self.is_node_in_segment_range(
+            result) and otro_segmento.is_node_in_segment_range(result) else None
+
+    def __sub__(self, other_segment):
+        """Returns the resulting segment(s) when deleting the parts of self that belong to other_segment"""
+        if not(self.is_parallel_to_segment_and_shares_range(other_segment)):
+            return [self]
+        if not self.segment_vectors_share_orientation(other_segment):
+            equivalent_segment = Segment(other_segment.end_node, other_segment.start_node)
+        else:
+            equivalent_segment = other_segment
+        segments_to_keep = []
+
+        if self.node_belongs_to_segment(equivalent_segment.start_node):
+            segments_to_keep.append(Segment(self.start_node, equivalent_segment.start_node))
+        if self.node_belongs_to_segment(equivalent_segment.end_node):
+            segments_to_keep.append(Segment(equivalent_segment.end_node, self.end_node))
+
+        segments_to_keep = [segment for segment in segments_to_keep if segment.vector.not_null]
+        if len(segments_to_keep) == 0:  # All self belongs to other_segment
+            return None
+        return segments_to_keep
+
+    def __repr__(self):  # Created so that segments can be removed from lists. Required in plotly_engine.py module.
+        return f"Segment(({self.start_node.x, self.start_node.y}); ({self.end_node.x, self.end_node.y}))"
+
+    def __floordiv__(self, other_segment):
+        """True if segments are parallel"""
+        if self.segment_line & other_segment.segment_line is None:
+            return True
+        return False
+
+    def __eq__(self, other_segment):
+        if not self // other_segment:
+            return False
+        if self.vector * other_segment.vector > 0:  # Segments share orientation
+            return all([self.start_node == other_segment.start_node, self.end_node == other_segment.end_node])
+        else:
+            return all([self.start_node == other_segment.end_node, self.end_node == other_segment.start_node])
 
 
 class Poligono(object):
@@ -248,8 +333,8 @@ class Poligono(object):
                 return False
         return True
 
-    def determinar_si_nodo_pertence_a_contorno_sin_borde(self, nodo_a_buscar: Node):
-        """Devuelve verdadero si el nodo se encuentra dentro del contorno, incluyendo los bordes del mismo."""
+    def determinar_si_nodo_pertence_a_contorno_sin_bordes(self, nodo_a_buscar: Node):
+        """Devuelve verdadero si el nodo se encuentra dentro del contorno, sin incluir los bordes del mismo."""
         for i, nodo in enumerate(self.nodos_extremos):
             nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
             recta = Line(nodo_1, nodo_2)  # Recta definida por el nodo 1 y nodo 2.
@@ -282,10 +367,10 @@ class Poligono(object):
             return self
         # Determinar que nodos de otro_poligono pertenecen a self
         for nodo in otro_poligono.nodos_extremos:
-            if self.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo):
+            if self.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo):
                 lista_nodos_interseccion.append(nodo)
         for nodo_pos in self.nodos_extremos:  # Determinar que nodos de self pertenecen a otro_poligono
-            if otro_poligono.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo_pos):
+            if otro_poligono.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo_pos):
                 lista_nodos_interseccion.append(nodo_pos)
         if len(lista_nodos_interseccion) <= 2:
             return self
@@ -338,13 +423,19 @@ class Poligono(object):
             return []
 
         for nodo in poligono_2.nodos_extremos:  # Determinar qué nodos de otro_poligono pertenecen a self
-            if poligono_1.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo):
+            if poligono_1.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo):
                 lista_nodos_interseccion.append(nodo)
         for nodo_pos in poligono_1.nodos_extremos:  # Determinar qué nodos de self pertenecen a otro_poligono
-            if poligono_2.determinar_si_nodo_pertence_a_contorno_sin_borde(nodo_pos):
+            if poligono_2.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo_pos):
                 lista_nodos_interseccion.append(nodo_pos)
         nodos_interseccion = NodeList(lista_nodos_interseccion).remove_duplicates()
         return nodos_interseccion
+
+    def is_segment_a_border_segment(self, segment: Segment):
+        for border_segment in self.segmentos_borde:
+            if border_segment == segment:
+                return True
+        return False
 
     def __and__(self, otro_poligono):
         """Devuelve los nodos de interseccion de dos poligonos"""
@@ -365,7 +456,7 @@ class Poligono(object):
         centro_pertenece_a_contorno = contorno.determinar_si_nodo_pertence_a_contorno(self.nodo_centroide)
         if not centro_pertenece_a_contorno:
             return False
-        if not isinstance(contorno, ContornoCircular):
+        if not isinstance(contorno, ContornoCircular):  # TODO add functionality
             intersecciones = contorno & self
             return True if not intersecciones else False
         return True
@@ -485,12 +576,6 @@ class ElementoTrapecioCircular(object):
         self.nodos_extremos = self.obtener_nodos_extremos()
         self.segmentos_rectos = self.obtener_segmentos_rectos()
 
-    def plotly_elemento(self, fig, mostrar_centroide=False, transparencia=1):
-        PlotlyUtil.plot_trapecio_circular(trapecio_circular=self,
-                                          fig=fig,
-                                          mostrar_centroide=mostrar_centroide,
-                                          transparencia=transparencia)
-
     def pertenece_a_contorno(self, contorno):
         """Determina si self está contenido dentro de polígono mayor"""
         return contorno.determinar_si_nodo_pertence_a_contorno(self.nodo_centroide)
@@ -549,7 +634,12 @@ class ContornoCircular(ElementoTrapecioCircular):
 
     def determinar_si_nodo_pertence_a_contorno(self, nodo: Node):
         distancia_centro = self.nodo_centro - nodo
-        return self.radio_interno - TOLERANCE < distancia_centro < self.radio_externo + TOLERANCE
+        radio_interno_with_tolerance = max(self.radio_interno - TOLERANCE, 0.00)  # Avoiding negative values.
+        return radio_interno_with_tolerance <= distancia_centro <= self.radio_externo + TOLERANCE
+
+    def determinar_si_nodo_pertence_a_contorno_sin_bordes(self, nodo: Node):
+        distancia_centro = self.nodo_centro - nodo
+        return self.radio_interno < distancia_centro < self.radio_externo
 
 
 class Contorno(Poligono):
@@ -708,5 +798,5 @@ class SeccionArbitraria(object):
         return min(x.xg for x in self.elementos), max(x.xg for x in self.elementos), min(x.yg for x in self.elementos), max(x.yg for x in self.elementos)
 
     def plotly(self, fig, planos_de_carga):
-        plotly_util = PlotlyUtil(fig=fig)
-        plotly_util.plot_seccion(seccion=self, lista_de_angulos_plano_de_carga=planos_de_carga)
+        plotly_util = ACSAHEPlotlyEngine(fig=fig)
+        plotly_util.plot_cross_section(seccion=self, lista_de_angulos_plano_de_carga=planos_de_carga)

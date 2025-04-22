@@ -1,0 +1,42 @@
+<h3><a href="#">CARACTERÍSTICAS DE LOS MATERIALES</a></h3>
+ <div class="table-wrapper">
+            <table class="alt">
+                <colgroup>
+                    <col style="width: 10%;">
+                    <col style="width: 70%;">
+                    <col style="width: 20%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th>Descripción</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+        <tbody>
+            <tr>
+                <td>Hormigón</td>
+                <td>Calidad del hormigón.
+                <br>El número indíca la resistencia característica a la compresión expresada en MPa.</td>
+                <td>H{{ hormigon.fc | int }}</td>
+            </tr>
+            <tr>
+                <td>Acero Pasivo</td>
+                <td>Tipo de acero seleccionado para armadura pasiva.</td>
+                <td>{{ acero_pasivo }}</td>
+            </tr>
+            {% if tiene_acero_activo %}
+            <tr>
+                <td>Acero Activo</td>
+                <td>Tipo de acero seleccionado para armadura activa.<br>Deformación efectiva del acero de pretensado (producidas las pérdidas).</td>
+                <td>{{ acero_activo }}<br>{{ (def_de_pretensado * 1000) | round(2) }}‰</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>Armaduras Transversales</td>
+                <td>Tipo de armadura transversal seleccionada.</td>
+                <td>{{ tipo_estribo }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>

@@ -20,10 +20,10 @@ class ACSAHEUserInterface(QMainWindow):
 
         self.acsahe_instance = ACSAHE(
             app_gui=self,
-            nombre_del_archivo=file_name,
-            file_path=file_path,
-            save_html=self.html_checkbox.isChecked(),
-            generate_pdf=self.pdf_checkbox.isChecked()
+            input_file_name=file_name,
+            path_to_input_file=file_path,
+            save_html_toggle=self.html_checkbox.isChecked(),
+            generate_pdf_toggle=self.pdf_checkbox.isChecked()
         )
 
     def init_ui(self):
@@ -344,8 +344,8 @@ class ACSAHEWorker(QObject):
 
     def __init__(self, file_name, file_path, save_html, generate_pdf, gui):
         super().__init__()
-        self.file_name = file_name
-        self.file_path = file_path
+        self.input_file_name = file_name
+        self.path_to_input_file = file_path
         self.save_html = save_html
         self.generate_pdf = generate_pdf
         self.gui = gui
@@ -372,9 +372,9 @@ class ACSAHEWorker(QObject):
         wrapped_gui = GuiWrapper(self.gui, self.progress)
         ACSAHE(
             app_gui=wrapped_gui,
-            nombre_del_archivo=self.file_name,
-            file_path=self.file_path,
-            save_html=self.save_html,
-            generate_pdf=self.generate_pdf
+            input_file_name=self.input_file_name,
+            path_to_input_file=self.path_to_input_file,
+            save_html_toggle=self.save_html,
+            generate_pdf_toggle=self.generate_pdf
         )
         self.finished.emit()

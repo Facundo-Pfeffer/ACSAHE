@@ -270,7 +270,9 @@ class ExcelSheetManager:
 class ExcelManager:
     def __init__(self, file_path, read_only=True):
         self.app = xw.App(visible=False)
-        self.wb = self.app.books.open(file_path, read_only=read_only)
+        self.app.display_alerts = False
+        self.app.screen_updating = False
+        self.wb = self.app.books.open(file_path, update_links=False, read_only=read_only)
 
     def get_sheet(self, sheet_name):
         return ExcelSheetManager(self.wb.sheets[sheet_name])

@@ -9,7 +9,7 @@ import numpy as np
 from scipy.optimize import fsolve
 from functools import lru_cache
 
-from geometry.section_analysis import ResolucionGeometrica
+from geometry.section_analysis import ACSAHEGeometricSolution
 
 diferencia_admisible = 0.5
 
@@ -20,7 +20,7 @@ def show_message(message, titulo="Mensaje"):
 
 class DiagramaInteraccion2D:
 
-    def __init__(self, angulo_plano_de_carga, solucion_geometrica: ResolucionGeometrica):
+    def __init__(self, angulo_plano_de_carga, solucion_geometrica: ACSAHEGeometricSolution):
         self.geometria = solucion_geometrica
         self.concrete_element_array = self.get_concrete_element_array()
         self.rebar_array = self.get_rebar_array()
@@ -44,9 +44,11 @@ class DiagramaInteraccion2D:
 
     def get_rebar_array(self):
         return np.array([
-            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0) for rebar in self.geometria.EA],
+            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.ey) for rebar in self.geometria.EA],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
-                   ('strain', float)])
+                   ('strain', float),
+                   ('ey', float)  # ey is later used for computing the strength reduction factor Φ (Table 21.2.2)
+                   ])
 
     def get_prestressed_reinforcement_array(self):
         return np.array([
@@ -183,43 +185,43 @@ class DiagramaInteraccion2D:
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
         return np.max(neutral_axis_distances)  # Most distant (traction) steel fiber
 
-    def obtener_y_determinante_negativo(self, def_extrema, rebar_array, prestressed_array, concrete_array):
-        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:
+    def obtener_y_determinante_negativo(self, extreme_strain, rebar_array, prestressed_array, concrete_array):
+        if extreme_strain <= 0 or extreme_strain < self.geometria.deformacion_maxima_de_acero:
             return concrete_array["neutral_axis_distance"][0]  # Distance to compressed concrete fiber.
 
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
         return np.min(neutral_axis_distances)  # Most distant (traction) steel fiber
 
     def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
-            self, rot_concrete_array, rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion):
+            self, rot_concrete_array, rot_rebar_array, rot_prestressed_array, strain_plane_eq):
 
         # -------------------- 1. Compute flexural strain fields --------------------
-        rot_concrete_array['strain'] = ecuacion_plano_deformacion(rot_concrete_array["neutral_axis_distance"])
-        rot_rebar_array['strain'] = ecuacion_plano_deformacion(rot_rebar_array["neutral_axis_distance"])
-        rot_prestressed_array['flexural_strain'] = ecuacion_plano_deformacion(
+        rot_concrete_array['strain'] = strain_plane_eq(rot_concrete_array["neutral_axis_distance"])
+        rot_rebar_array['strain'] = strain_plane_eq(rot_rebar_array["neutral_axis_distance"])
+        rot_prestressed_array['flexural_strain'] = strain_plane_eq(
             rot_prestressed_array["neutral_axis_distance"])
 
 
         # -------------------- 2. Concrete --------------------
-        def_max_comp = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
-        fuerzas_concreto = np.array([
-            self.geometria.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=def_max_comp) * a
+        max_compression_strain = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
+        concrete_forces = np.array([
+            self.geometria.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=max_compression_strain) * a
             for e, a in zip(rot_concrete_array['strain'], rot_concrete_array['area'])
         ])
-        sumFH = np.sum(fuerzas_concreto)
-        MxH = np.sum(fuerzas_concreto * rot_concrete_array['yg'])
-        MyH = np.sum(-fuerzas_concreto * rot_concrete_array['xg'])
+        sumFH = np.sum(concrete_forces)
+        MxH = np.sum(concrete_forces * rot_concrete_array['yg'])
+        MyH = np.sum(-concrete_forces * rot_concrete_array['xg'])
 
         # -------------------- 3. Passive Rebar --------------------
-        fuerzas_rebar = np.array([
+        rebar_forces = np.array([
             self.geometria.EA[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_rebar_array['strain'],
                 rot_rebar_array['area']
             )
         ])
-        sumFA = np.sum(fuerzas_rebar)
-        MxA = np.sum(fuerzas_rebar * rot_rebar_array['yg'])
-        MyA = np.sum(-fuerzas_rebar * rot_rebar_array['xg'])
+        sumFA = np.sum(rebar_forces)
+        MxA = np.sum(rebar_forces * rot_rebar_array['yg'])
+        MyA = np.sum(-rebar_forces * rot_rebar_array['xg'])
 
         # -------------------- 4. Prestressed Rebar --------------------
         # Shortening and prestress already defined — total strain
@@ -229,19 +231,20 @@ class DiagramaInteraccion2D:
                 rot_prestressed_array['effective_strain']
         )
 
-        fuerzas_prestressed = np.array([
+        prestressed_forces = np.array([
             self.geometria.EAP[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_prestressed_array['total_strain'],
                 rot_prestressed_array['area']
             )
         ])
-        sumFP = np.sum(fuerzas_prestressed)
-        MxAP = np.sum(fuerzas_prestressed * rot_prestressed_array['yg'])
-        MyAP = np.sum(-fuerzas_prestressed * rot_prestressed_array['xg'])
+        sumFP = np.sum(prestressed_forces)
+        MxAP = np.sum(prestressed_forces * rot_prestressed_array['yg'])
+        MyAP = np.sum(-prestressed_forces * rot_prestressed_array['xg'])
 
         # -------------------- 5. Strength Reduction Factor --------------------
-        phi = self.obtener_factor_minoracion_de_resistencia(
-            rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion, self.geometria.tipo_estribo
+
+        phi = self.get_strength_reduction_factor_2024(
+            rot_rebar_array, rot_prestressed_array, self.geometria.tipo_estribo
         )
 
         # -------------------- 6. Totals --------------------
@@ -251,8 +254,17 @@ class DiagramaInteraccion2D:
 
         return sumF, Mx, My, phi
 
-    def obtener_factor_minoracion_de_resistencia(self, rot_rebar_array, rot_prestressed_array, ecuacion_plano_de_def,
-                                                 tipo_estribo):
+    def get_strength_reduction_factor(self, **kwargs):
+        if isinstance(self.phi_minoriacion_resistencia, float):
+            return self.phi_minoriacion_resistencia
+        elif "CIRSOC 201-2005" in self.phi_minoriacion_resistencia:
+            return self.get_strength_reduction_factor_2005(**kwargs)
+        elif "CIRSOC 201-2024" in self.phi_minoriacion_resistencia:
+            return self.get_strength_reduction_factor_2024(**kwargs)
+        else:
+            return 1.0
+
+    def get_strength_reduction_factor_2005(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
         # Manual override
         if isinstance(self.phi_minoriacion_resistencia, float):
             return self.phi_minoriacion_resistencia
@@ -260,16 +272,13 @@ class DiagramaInteraccion2D:
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
 
         if len(rot_rebar_array) == 0 and len(rot_prestressed_array) == 0:
-            return 0.55  # Hormigón simple
+            return 0.55  # Plain concrete
 
-        # Concatenate distances from both arrays
-        all_neutral_axis_distances = np.concatenate([
-            rot_rebar_array["neutral_axis_distance"],
-            rot_prestressed_array["neutral_axis_distance"]
+        # Concatenate strains
+        all_strains = np.concatenate([
+            rot_rebar_array["strain"],
+            rot_prestressed_array["flexural_strain"]
         ])
-
-        # Compute strains from deformation plane
-        all_strains = ecuacion_plano_de_def(all_neutral_axis_distances)
         max_strain = np.max(all_strains)
 
         # Interpolation logic
@@ -282,6 +291,44 @@ class DiagramaInteraccion2D:
                     phi_min * (0.005 - max_strain) / 0.003 +
                     0.9 * (max_strain - 0.002) / 0.003
             )
+
+    def get_strength_reduction_factor_2024(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
+        # Manual override
+        if isinstance(self.phi_minoriacion_resistencia, float):
+            return self.phi_minoriacion_resistencia
+
+        phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.75
+        phi_max = 0.90
+
+        if len(rot_rebar_array) == 0 and len(rot_prestressed_array) == 0:
+            return 0.60  # Plain concrete
+
+        # Get most distant bars for each type
+        extreme_tension_rebar = np.sort(rot_rebar_array, order="strain")[-1] if len(rot_rebar_array) > 0 else None
+        extreme_tension_prestressed_bar = np.sort(rot_prestressed_array, order="flexural_strain")[-1] if len(rot_prestressed_array) > 0 else None
+
+        # Get most distant bars for each type
+        if extreme_tension_rebar is not None and extreme_tension_prestressed_bar is not None:
+            if extreme_tension_rebar["strain"] >= extreme_tension_prestressed_bar["flexural_strain"]:
+                max_steel_strain = extreme_tension_rebar["strain"]
+                ety = extreme_tension_rebar["ey"]
+            else:
+                max_steel_strain = extreme_tension_prestressed_bar["flexural_strain"]
+                ety = 2/1000
+        elif extreme_tension_prestressed_bar is None:
+            max_steel_strain = extreme_tension_rebar["strain"]
+            ety = extreme_tension_rebar["ey"]
+        else:
+            max_steel_strain = extreme_tension_prestressed_bar["flexural_strain"]
+            ety = 2 / 1000
+
+        # Interpolation logic
+        if max_steel_strain >= ety + 0.003:
+            return phi_max
+        elif max_steel_strain < ety:
+            return phi_min
+        else:
+            return phi_min + (phi_max-phi_min)/(3/1000)*(max_steel_strain-ety)
 
     @staticmethod
     def numero_a_color_arcoiris(numero):
@@ -312,27 +359,3 @@ class DiagramaInteraccion2D:
         azul = int(azul * 255)
 
         return [rojo, verde, azul]
-
-    @staticmethod
-    def preparar_eje_pyplot(ax):
-        # Mueve al centro del diagrama al eje X e Y (por defecto, se sitúan en el extremo inferior izquierdo).
-        ax.yaxis.tick_right()
-
-        ax.spines['left'].set_position('zero')
-        ax.spines['bottom'].set_position('zero')
-
-        # Elimina los viejos ejes
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
-
-        # 'Tics' (marcas en el eje) en los ejes.
-        ax.xaxis.set_ticks_position('bottom')
-        ax.yaxis.set_ticks_position('left')
-
-        # Grilla de referencia
-        ax.grid(which='major', color='#DDDDDD', linewidth=0.8)
-        ax.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.6)
-        ax.minorticks_on()
-
-        # Desplazamos los valores de y a la izquierda
-        return ax

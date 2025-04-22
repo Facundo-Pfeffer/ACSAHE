@@ -1,0 +1,63 @@
+<h3><a href="#"><br>PROPIEDADES DE LA SECCIÓN</a></h3>
+<div class="table-wrapper">
+    <table class="alt">
+        <colgroup>
+            <col style="width: 10%;">
+            <col style="width: 70%;">
+            <col style="width: 20%;">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>Propiedad</th>
+                <th>Descripción</th>
+                <th>Valor</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Área</td>
+                <td>Área de la sección bruta de Hormigón.</td>
+                <td>{{ area | round(2) }} cm²</td>
+            </tr>
+            <tr>
+                <td>Ix</td>
+                <td>Inercia con respecto al eje x.</td>
+                <td>{{ Ix | round(2) }} cm⁴</td>
+            </tr>
+            <tr>
+                <td>Iy</td>
+                <td>Inercia con respecto al eje y.</td>
+                <td>{{ Iy | round(2) }} cm⁴</td>
+            </tr>
+            <tr>
+                <td>ρ</td>
+                <td>Cuantía geométrica de refuerzo pasivo.</td>
+                <td>{{ cuantia_pasiva }}</td>
+            </tr>
+            {% if cuantia_activa %}
+            <tr>
+                <td>ρp</td>
+                <td>Cuantía geométrica de refuerzo activo.</td>
+                <td>{{ cuantia_activa }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>Discretización</td>
+                <td>Tipo de discretización elegida: {{ nivel_disc }}.</td>
+                <td>
+                    {% if dx %}ΔX={{ dx | round(2) }} cm<br>{% endif %}
+                    {% if dy %}ΔY={{ dy | round(2) }} cm<br>{% endif %}
+                    {% if d_ang %}Δθ={{ d_ang | round(2) }} °<br>{% endif %}
+                    {% if dr %}Δr={{ dr | round(2) }} particiones<br>(variación logarítmica){% endif %}
+                </td>
+            </tr>
+            {% if info_pretensado %}
+            <tr>
+                <td>Pretensado</td>
+                <td>Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.</td>
+                <td>{{ info_pretensado }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

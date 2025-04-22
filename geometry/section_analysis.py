@@ -8,20 +8,20 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy.optimize import fsolve
 
-from materiales.acero_pasivo import BarraAceroPasivo
-from materiales.acero_pretensado import BarraAceroPretensado
-from build.ext_utils.excel_manager import ExcelManager, ExcelSheetManager
+from materials.acero_pasivo import BarraAceroPasivo
+from materials.acero_pretensado import BarraAceroPretensado
+from build.utils.excel_manager import ExcelManager, ExcelSheetManager
 from geometry.section_geometry_engine import Node, Contorno, SeccionArbitraria, Segment, ContornoCircular
-from materiales.hormigon import Hormigon
-from materiales.matrices import MatrizAceroPasivo, MatrizAceroActivo
-from build.ext_utils.plotly_util import PlotlyUtil
+from materials.hormigon import Hormigon
+from materials.matrices import MatrizAceroPasivo, MatrizAceroActivo
+from build.utils.plotly_engine import ACSAHEPlotlyEngine
 
 
 def show_message(message, titulo="Mensaje"):
     messagebox.showinfo(titulo, message)
 
 
-class ResolucionGeometrica:
+class ACSAHEGeometricSolution:
     #  Cantidades de partes en las cuales se divide
     niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 30, "Fina": 50, "Muy Fina": 100}
     #  Los niveles de discretizacion: ([parámetro en función logaritmica (ver ],
@@ -66,8 +66,8 @@ class ResolucionGeometrica:
                 y) + math.tan(
                 math.radians(self.phiy)) * x
             self.asignar_deformacion_hormigon_a_elementos_pretensados()
-            if self.problema["tipo"] == "2D":
-                self.construir_grafica_seccion()
+            # if self.problema["tipo"] == "2D":
+                # self.construir_grafica_seccion()  #TODO redo
 
     def cargar_hojas_de_calculo(self, excel_manager):
         """Inicializa las hojas de cálculo a partir de ExcelManager."""
@@ -641,8 +641,8 @@ class ResolucionGeometrica:
             scaleratio=1,
         )
 
-        plotly_util = PlotlyUtil(fig)
-        plotly_util.cargar_barras_como_circulos_para_mostrar_plotly(self.EA, self.EAP)
+        plotly_util = ACSAHEPlotlyEngine(fig)
+        plotly_util.plot_reinforcement_bars_as_circles(self.EA, self.EAP)
 
         self.seccion_H.plotly(fig, self.lista_ang_plano_de_carga)
 
@@ -665,25 +665,25 @@ class ResolucionGeometrica:
         return fig
 
     @staticmethod
-    def coordenadas_de_puntos_en_3d(lista_resultados_2d):
+    def get_3d_coordinates(list_of_results_2d):
         X, Y, Z = [], [], []
-        color_lista = []
-        phi_lista = []
+        color_list = []
+        phi_list = []
         plano_def = []
-        if not lista_resultados_2d:
+        if not list_of_results_2d:
             return None
-        for resultado in lista_resultados_2d:
-            x = -resultado["Mx"] / 100
-            y = -resultado["My"] / 100
-            z = -resultado["sumF"]  # Negativo para que la compresión quede en cuadrante I y II del diagrama.
+        for result in list_of_results_2d:
+            x = -result["Mx"] / 100
+            y = -result["My"] / 100
+            z = -result["sumF"]  # Negative so compression points lye on quadrants I and II
             X.append(x)
             Y.append(y)
             Z.append(z)
-            phi_lista.append(resultado["phi"])
-            plano_def.append(resultado["plano_de_deformacion"])
-            color = resultado["color"]
-            color_lista.append(f"rgb({color[0]},{color[1]},{color[2]})")
-        return (X, Y, Z, phi_lista), color_lista, plano_def
+            phi_list.append(result["phi"])
+            plano_def.append(result["plano_de_deformacion"])
+            color = result["color"]
+            color_list.append(f"rgb({color[0]},{color[1]},{color[2]})")
+        return (X, Y, Z, phi_list), color_list
 
     def insertar_valores_2D(self, data_subset, lista_puntos_a_verificar):
         for k, v in data_subset.items():

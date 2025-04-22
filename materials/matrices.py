@@ -1,5 +1,5 @@
 import math
-from build.ext_utils.plotly_util import PlotlyUtil
+from build.utils.plotly_engine import ACSAHEPlotlyEngine
 
 
 class MatrizAceroPasivo(list):
@@ -7,7 +7,7 @@ class MatrizAceroPasivo(list):
         super().__init__()
 
     def cargar_barras_como_circulos_para_mostrar_plotly(self, fig):
-        plotly_util = PlotlyUtil()
+        plotly_util = ACSAHEPlotlyEngine()
         lista_de_diametros = set()
         shapes_list = []
         for barra in self:
@@ -18,8 +18,8 @@ class MatrizAceroPasivo(list):
                                   x0=barra.xg - radio, y0=barra.yg - radio,
                                   x1=barra.xg + radio, y1=barra.yg + radio,
                                   legend="legend",
-                                  fillcolor=plotly_util.colores_random_por_string(acero_y_diamtro_string),
-                                  line_color=plotly_util.colores_random_por_string(acero_y_diamtro_string),
+                                  fillcolor=plotly_util.reinforcement_colour_per_string(acero_y_diamtro_string),
+                                  line_color=plotly_util.reinforcement_colour_per_string(acero_y_diamtro_string),
                                   name=acero_y_diamtro_string,
                                   )
             shapes_list.append(dict(showlegend=acero_y_diamtro_string not in lista_de_diametros, **default_kwargs))
@@ -47,7 +47,7 @@ class MatrizAceroActivo(list):
 
     def cargar_barras_como_circulos_para_mostrar_plotly(self, fig):
 
-        plotly_util = PlotlyUtil(indice_color=3)
+        plotly_util = ACSAHEPlotlyEngine(indice_color=3)
         lista_de_diametros = set()
         shapes_list = []
         for barra in self:
@@ -57,9 +57,9 @@ class MatrizAceroActivo(list):
                                   xref="x", yref="y",
                                   x0=barra.xg - radio_equivalente, y0=barra.yg - radio_equivalente,
                                   x1=barra.xg + radio_equivalente, y1=barra.yg + radio_equivalente,
-                                  fillcolor=plotly_util.colores_random_por_string(acero_y_diamtro_string),
+                                  fillcolor=plotly_util.reinforcement_colour_per_string(acero_y_diamtro_string),
                                   # legendgroup=acero_y_diamtro_string,
-                                  line_color=plotly_util.colores_random_por_string(acero_y_diamtro_string),
+                                  line_color=plotly_util.reinforcement_colour_per_string(acero_y_diamtro_string),
                                   name=acero_y_diamtro_string,
                                   legend="legend2"
                                   )
