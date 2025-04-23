@@ -11,6 +11,7 @@ from tkinter import messagebox
 from interaction_diagram.interaction_diagram_builder import DiagramaInteraccion2D
 from geometry.section_analysis import ACSAHEGeometricSolution
 from build.utils.plotly_engine import ACSAHEPlotlyEngine
+from report.report_engine import ACSAHEReportEngine
 
 def show_message(message, titulo="Mensaje"):
     messagebox.showinfo(titulo, message)
@@ -23,7 +24,7 @@ class ACSAHE:
         "Ultimo": "Construyendo resultados ..."
     }
 
-    def __init__ (self, app_gui, input_file_name, path_to_input_file, save_html_toggle=False, generate_pdf_toggle=False):
+    def __init__ (self, app_gui, input_file_name, path_to_input_file, html_folder_path=None, pdf_folder_path=None):
         super().__init__()
         # Gathering useful paths on user's PC
         self.input_file_name = input_file_name
@@ -31,9 +32,10 @@ class ACSAHE:
         self.path_to_exe = self.get_base_path()
 
         self.app_gui = app_gui
-        self.save_html_toggle = save_html_toggle
-        self.generate_pdf = generate_pdf_toggle
-
+        self.save_html = bool(html_folder_path)
+        self.html_folder_path = html_folder_path
+        self.generate_pdf = bool(pdf_folder_path)
+        self.pdf_folder_path = pdf_folder_path
         self.geometric_solution = None
         self.plotly_data_subsets = {}
         self.plotly_engine = ACSAHEPlotlyEngine()
@@ -113,7 +115,7 @@ class ACSAHE:
                         self.progress_bar_messages["Ultimo"],
                         int(step_number / self.total_steps * 100)
                     )
-                    self.plotly_engine.build_result_html(
+                    fig, fig_2d_list = self.plotly_engine.build_result_html(
                         geometric_solution,
                         self.x_total, self.y_total, self.z_total,
                         self.hover_text_total, self.color_total, self.is_capped_total,
@@ -121,6 +123,18 @@ class ACSAHE:
                         self.path_to_exe,
                         self.input_file_name
                     )
+                    if self.generate_pdf:
+                        interaction_diagram = fig if geometric_solution.problema["tipo"] == "2D" else fig_2d_list
+                        engine = ACSAHEReportEngine(
+                            template_path=f'{self.path_to_exe}/build/pdf/ACSAHE Report Template.docx',
+                            geometric_solution=geometric_solution,
+                            plots={"[Gráfico de la sección]": self.plotly_engine.section_fig,
+                                "[Resultado del diagrama de interacción]":  interaction_diagram},
+                            filename=f'{self.input_file_name}',
+                        )
+                        engine.build_report()
+                        name_no_extension = ".".join(self.input_file_name.split(".")[:-1]) if "." in self.input_file_name else self.input_file_name
+                        engine.save_report(f"{self.pdf_folder_path}/{name_no_extension}.docx")
 
         except Exception as e:
             traceback.print_exc()

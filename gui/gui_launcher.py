@@ -22,8 +22,8 @@ class ACSAHEUserInterface(QMainWindow):
             app_gui=self,
             input_file_name=file_name,
             path_to_input_file=file_path,
-            save_html_toggle=self.html_checkbox.isChecked(),
-            generate_pdf_toggle=self.pdf_checkbox.isChecked()
+            html_folder_path=self.html_folder_path if self.html_checkbox.isChecked() else None,
+            pdf_folder_path=self.pdf_folder_path if self.pdf_checkbox.isChecked() else None
         )
 
     def init_ui(self):
@@ -209,8 +209,8 @@ class ACSAHEUserInterface(QMainWindow):
             self.worker = ACSAHEWorker(
                 file_name=file_name,
                 file_path=file_path,
-                save_html=self.html_checkbox.isChecked(),
-                generate_pdf=self.pdf_checkbox.isChecked(),
+                html_folder_path=self.html_folder_path if self.html_checkbox.isChecked() else None,
+                pdf_folder_path=self.pdf_folder_path if self.pdf_checkbox.isChecked() else None,
                 gui=self
             )
             self.worker.moveToThread(self.thread)
@@ -255,6 +255,9 @@ class ACSAHEUserInterface(QMainWindow):
                 if self.excel_file_paths and all(Path(f).exists() for f in self.excel_file_paths):
                     display_names = ', '.join([os.path.basename(f) for f in self.excel_file_paths])
                     self.excel_button.setText(f"  {display_names}")
+                icon_path = "build/icons/excel_icon.png"
+                if os.path.exists(icon_path):
+                    self.excel_button.setIcon(QIcon(icon_path))
 
                 self.html_checkbox.setChecked(config.get("save_html", False))
                 self.pdf_checkbox.setChecked(config.get("generate_pdf", False))
@@ -342,12 +345,12 @@ class ACSAHEWorker(QObject):
     finished = pyqtSignal()
     progress = pyqtSignal(str, int)
 
-    def __init__(self, file_name, file_path, save_html, generate_pdf, gui):
+    def __init__(self, file_name, file_path, html_folder_path, pdf_folder_path, gui):
         super().__init__()
         self.input_file_name = file_name
         self.path_to_input_file = file_path
-        self.save_html = save_html
-        self.generate_pdf = generate_pdf
+        self.html_folder_path = html_folder_path
+        self.pdf_folder_path = pdf_folder_path
         self.gui = gui
 
     def showNormal(self):
@@ -374,7 +377,7 @@ class ACSAHEWorker(QObject):
             app_gui=wrapped_gui,
             input_file_name=self.input_file_name,
             path_to_input_file=self.path_to_input_file,
-            save_html_toggle=self.save_html,
-            generate_pdf_toggle=self.generate_pdf
+            html_folder_path=self.html_folder_path if hasattr(self, "html_folder_path") else None,
+            pdf_folder_path=self.pdf_folder_path
         )
         self.finished.emit()

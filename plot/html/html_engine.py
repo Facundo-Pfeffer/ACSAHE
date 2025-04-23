@@ -6,15 +6,15 @@ class ACSAHEHtmlEngine:
         template_dir = project_path + "/build/html"
         self.env = Environment(loader=FileSystemLoader(template_dir))
 
-    def caracteristicas_materiales_html(self, geometria):
+    def caracteristicas_materiales_html(self, geometric_solution):
         template = self.env.get_template("materials_summary_template.html")
         return template.render(
-            hormigon=geometria.hormigon,
-            acero_pasivo=geometria.acero_pasivo,
-            acero_activo=geometria.acero_activo,
-            def_de_pretensado=geometria.def_de_pretensado_inicial,
-            tipo_estribo=geometria.tipo_estribo,
-            tiene_acero_activo=bool(geometria.EAP)
+            hormigon=geometric_solution.hormigon,
+            acero_pasivo=geometric_solution.acero_pasivo,
+            acero_activo=geometric_solution.acero_activo,
+            def_de_pretensado=geometric_solution.def_de_pretensado_inicial,
+            tipo_estribo=geometric_solution.tipo_estribo,
+            tiene_acero_activo=bool(geometric_solution.EAP)
         )
 
     def propiedades_html(self, geometric_solution) -> str:

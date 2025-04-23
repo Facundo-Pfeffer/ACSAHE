@@ -15,6 +15,7 @@ class ACSAHEPlotlyEngine(object):
         self.fig = self.obtener_fig(fig)
         self.indice_color = indice_color
         self.strings_y_color = {}
+        self.section_fig = None
 
     @staticmethod
     def obtener_fig(fig):
@@ -356,15 +357,16 @@ class ACSAHEPlotlyEngine(object):
             data_subsets: Dict,
             project_path: str,
             file_name: str
-    ) -> None:
+    ):
         """
         Orchestrates the HTML result generation and opens it in the browser.
         """
-        fig = self._render_fig(geometric_solution, x_list, y_list, z_list, hover_text_list, color_list, is_capped_list, data_subsets)
+        fig_interactive, fig_2d_list = self._render_fig(geometric_solution, x_list, y_list, z_list, hover_text_list, color_list, is_capped_list, data_subsets)
         static_assets = self._load_static_assets(Path(project_path))
-        context = self._build_html_context(fig, geometric_solution, static_assets, project_path, file_name)
+        context = self._build_html_context(fig_interactive, geometric_solution, static_assets, project_path, file_name)
         html_path = self._write_temp_html_file(static_assets["template"], context)
         webbrowser.open(f"file://{html_path}")
+        return fig_interactive, fig_2d_list
 
     def _render_fig(self, gs, x, y, z, text, color, is_capped, data_subsets):
         tipo = gs.problema["tipo"]
@@ -374,13 +376,20 @@ class ACSAHEPlotlyEngine(object):
             fig = self.print_2d(gs, x, y, z, text, color, is_capped, data_subsets)
             if resultados_en_wb:
                 gs.insertar_valores_2D(data_subsets, gs.problema.get("puntos_a_verificar"))
+            fig.update_layout(autosize=True)
+            return fig, None
         else:
             fig = self.print_3d(gs, x, y, z, text, color, is_capped, data_subsets)
             if resultados_en_wb:
                 gs.insertar_valores_3D(data_subsets)
+            fig.update_layout(autosize=True)
+            return fig, [self.print_2d(gs, **self._2d_arguments(subset_data, lambda_angle)) for lambda_angle, subset_data in data_subsets.items()]
 
-        fig.update_layout(autosize=True)
-        return fig
+    def _2d_arguments(self, subset_data, lambda_angle):
+        return dict(lista_x_total=subset_data["x"], lista_y_total=subset_data["y"], lista_z_total=subset_data["z"],
+                    lista_text_total=subset_data["text"], lista_color_total=subset_data["color"],
+                    is_capped_list=subset_data["is_capped"], data_subsets={lambda_angle: subset_data},
+                    lambda_angle_3d_only=lambda_angle)
 
     def _load_static_assets(self, project_path: Path) -> Dict[str, Any]:
         html_dir = project_path / "build" / "html"
@@ -397,14 +406,14 @@ class ACSAHEPlotlyEngine(object):
 
     def _build_html_context(self, fig, gs, assets: Dict[str, str], project_path: str, file_name: str) -> Dict[str, str]:
         html_engine = ACSAHEHtmlEngine(project_path)
-
+        self.section_fig = gs.construir_grafica_seccion_plotly()
         return {
             "icon_encoded": assets["encoded_icon"],
             "archivo": f"Archivo: {file_name}",
             "main_css": assets["main_css"],
             "noscript_css": assets["noscript_css"],
             "ctrl_p_js": assets["ctrl_p_js"],
-            "html_seccion": gs.construir_grafica_seccion_plotly().to_html(
+            "html_seccion": self.section_fig.to_html(
                 full_html=False,
                 config=self.get_fig_html_config("ACSAHE - Sección")
             ),
@@ -645,15 +654,21 @@ class ACSAHEPlotlyEngine(object):
 
     def print_2d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
                  lista_color_total, is_capped_list,
-                 data_subsets):
+                 data_subsets, lambda_angle_3d_only=None):
         fig = go.Figure(layout_template="plotly_white")
         lista_x_total = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for
                          x, y
                          in
                          zip(lista_x_total, lista_y_total)]
 
-        X = [x["M"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-        Y = [x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+        if solucion_geometrica.problema["tipo"] == "3D":  # Plotting 2D in report
+            # if planod_de_carga is an int, it is because Mx=My=0 and there are infinite planoes_de_carga
+            X = [(1 if x["Mx"] >= 0 else -1) * math.sqrt(x["Mx"] ** 2 + x["My"] ** 2) for x in solucion_geometrica.problema["puntos_a_verificar"] if isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
+            Y = [x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"] if isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
+        else:
+            X = [x["M"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+            Y = [x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+
         nombre = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         text_estados_2d = self.hover_text_estados_2d(X, Y, nombre)
 
