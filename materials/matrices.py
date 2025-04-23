@@ -29,8 +29,7 @@ class MatrizAceroPasivo(list):
             "xref": "container",
             "yref": "container",
             "y": 0.85,
-            "groupclick": "toggleitem"},showlegend="true")
-
+            "groupclick": "toggleitem"}, showlegend="true")
 
     def cuantia_geometrica(self, area_bruta_hormigon, output_str=False):
         if area_bruta_hormigon == 0:

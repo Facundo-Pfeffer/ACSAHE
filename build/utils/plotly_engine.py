@@ -9,6 +9,7 @@ from typing import Any, Dict, Tuple
 
 from plot.html.html_engine import ACSAHEHtmlEngine
 
+
 class ACSAHEPlotlyEngine(object):
     def __init__(self, fig=None, indice_color=0):
         self.fig = self.obtener_fig(fig)
@@ -103,7 +104,7 @@ class ACSAHEPlotlyEngine(object):
                             segment_split_list.remove(positive_segment)
                             segment_split_list.extend(substract_result)
         return segment_split_list
-    
+
     def _is_segment_in_positive_polygons(self, segment, positive_polygons_list) -> bool:
         for positive_polygon in positive_polygons_list:
             if any(positive_polygon.determinar_si_nodo_pertence_a_contorno_sin_bordes(node) for node in[segment.start_node, segment.end_node]):
@@ -208,9 +209,9 @@ class ACSAHEPlotlyEngine(object):
     def reinforcement_colour_per_string(self, string):
         crimson_scale_colors = [
             "rgb(255, 0, 0)",  # Pure Red
-            "rgb(241, 196, 15)",  # Gold: Stands out against cyan, less harsh than pure yellow
-            "rgb(46, 204, 113)",  # Emerald
             "rgb(0, 0, 255)",  # Blue
+            "rgb(241, 196, 15)",  # Gold
+            "rgb(46, 204, 113)",  # Emerald
             "rgb(255, 0, 255)",  # Magenta
             "rgb(255, 140, 0)",  # Dark Orange
             "rgb(0, 255, 255)",  # Cyan
@@ -346,11 +347,12 @@ class ACSAHEPlotlyEngine(object):
     def build_result_html(
             self,
             geometric_solution: Any,
-            lista_x: list,
-            lista_y: list,
-            lista_z: list,
-            lista_text: list,
-            lista_color: list,
+            x_list: list,
+            y_list: list,
+            z_list: list,
+            hover_text_list: list,
+            color_list: list,
+            is_capped_list: list,
             data_subsets: Dict,
             project_path: str,
             file_name: str
@@ -358,22 +360,22 @@ class ACSAHEPlotlyEngine(object):
         """
         Orchestrates the HTML result generation and opens it in the browser.
         """
-        fig = self._render_fig(geometric_solution, lista_x, lista_y, lista_z, lista_text, lista_color, data_subsets)
+        fig = self._render_fig(geometric_solution, x_list, y_list, z_list, hover_text_list, color_list, is_capped_list, data_subsets)
         static_assets = self._load_static_assets(Path(project_path))
         context = self._build_html_context(fig, geometric_solution, static_assets, project_path, file_name)
         html_path = self._write_temp_html_file(static_assets["template"], context)
         webbrowser.open(f"file://{html_path}")
 
-    def _render_fig(self, gs, x, y, z, text, color, data_subsets):
+    def _render_fig(self, gs, x, y, z, text, color, is_capped, data_subsets):
         tipo = gs.problema["tipo"]
         resultados_en_wb = gs.problema.get("resultados_en_wb", False)
 
         if tipo == "2D":
-            fig = self.print_2d(gs, x, y, z, text, color, data_subsets)
+            fig = self.print_2d(gs, x, y, z, text, color, is_capped, data_subsets)
             if resultados_en_wb:
                 gs.insertar_valores_2D(data_subsets, gs.problema.get("puntos_a_verificar"))
         else:
-            fig = self.print_3d(gs, x, y, z, text, color, data_subsets)
+            fig = self.print_3d(gs, x, y, z, text, color, is_capped, data_subsets)
             if resultados_en_wb:
                 gs.insertar_valores_3D(data_subsets)
 
@@ -404,13 +406,14 @@ class ACSAHEPlotlyEngine(object):
             "ctrl_p_js": assets["ctrl_p_js"],
             "html_seccion": gs.construir_grafica_seccion_plotly().to_html(
                 full_html=False,
-                config=self.configuracion_descarga_imagen("ACSAHE - Sección")
+                config=self.get_fig_html_config("ACSAHE - Sección")
             ),
             "tabla_propiedades": html_engine.propiedades_html(gs),
             "tabla_caracteristicas_materiales": html_engine.caracteristicas_materiales_html(gs),
             "html_resultado": fig.to_html(
                 full_html=False,
-                config=self.configuracion_descarga_imagen(f"ACSAHE - Resultado {gs.problema['tipo']}")
+                include_plotlyjs='cdn',
+                config=self.get_fig_html_config(f"ACSAHE - Resultado {gs.problema['tipo']}")
             ),
             "foto_logo": f"{project_path}/build/images/LOGO%20ACSAHE.webp"
         }
@@ -450,7 +453,8 @@ class ACSAHEPlotlyEngine(object):
         ))
 
     def print_3d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
-                 lista_color_total, data_subsets):
+                 lista_color_total, is_capped_list, data_subsets):
+
         plano_de_carga_lista = set(x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"])
         plano_de_carga_lista = list(plano_de_carga_lista)
         plano_de_carga_lista.sort()
@@ -474,24 +478,16 @@ class ACSAHEPlotlyEngine(object):
         plano_de_carga_lista.sort()
 
         fig = go.Figure(layout_template="plotly_white")
-        fig.add_trace(go.Scatter3d(
-            x=lista_x_total,
-            y=lista_y_total,
-            z=lista_z_total,
-            mode='markers',
-            marker=dict(size=2, color=lista_color_total),
-            text=lista_text_total,
-            hoverinfo='text',
-            name='Contorno diagrama de interacción',
-            visible=True,
-        ))
+        result = self.get_fig_3d_params(data_subsets, estados_subsets)
 
-        lista_botones = self.agregar_diferentes_botones(fig, data_subsets, estados_subsets)
+        for trace in result["traces"]:
+            fig.add_trace(trace)
+
 
         rango_min = min(min(lista_x_total + X), min(lista_y_total + Y))
         rango_max = max(max(lista_x_total + X), max(lista_y_total + Y))
 
-        self.agregar_punto_estado(fig, X, Y, Z, NOMBRE)
+        # self.agregar_punto_estado(fig, X, Y, Z, NOMBRE)
 
         fig.update_layout(
             title=dict(
@@ -527,16 +523,128 @@ class ACSAHEPlotlyEngine(object):
         fig.update_layout(
             updatemenus=[dict(
                 type="buttons",
-                font={"color": "black", "size": 12},
                 direction="down",
-                showactive=True,
-                buttons=lista_botones,
-            )])
+                buttons=result["buttons"],
+                x=0.02,
+                y=0.98,
+                xanchor='left',
+                yanchor='top',
+                bgcolor='rgba(240,240,240,0.7)',
+                bordercolor='gray',
+                borderwidth=1
+            )]
+        )
 
         return fig
 
+    def get_fig_3d_params(self, data_subsets, estados_subsets):
+        all_traces = []
+        buttons = []
+        trace_indices_map = {}  # maps each lambda_angle to its exact trace indices
+
+        for lambda_angle, lists in data_subsets.items():
+            # track starting index before adding new traces
+            current_trace_start_idx = len(all_traces)
+
+            # build capped & not_capped traces
+            capped_trace = self._build_scatter3d_trace(
+                x=lists["x"], y=lists["y"], z=lists["z"],
+                color=lists["color"], text=lists["text"],
+                is_capped_list=lists["is_capped"],
+                capped=True
+            )
+            not_capped_trace = self._build_scatter3d_trace(
+                x=lists["x"], y=lists["y"], z=lists["z"],
+                color=lists["color"], text=lists["text"],
+                is_capped_list=lists["is_capped"],
+                capped=False
+            )
+
+            all_traces.extend([capped_trace, not_capped_trace])
+
+            # store indices for this lambda_angle
+            indices_for_this_lambda = [current_trace_start_idx, current_trace_start_idx + 1]
+
+            # add verify trace if applicable
+            if estados_subsets.get(lambda_angle):
+                verify_trace = self._build_verify_trace(estados_subsets[lambda_angle])
+                all_traces.append(verify_trace)
+                indices_for_this_lambda.append(current_trace_start_idx + 2)
+
+            trace_indices_map[lambda_angle] = indices_for_this_lambda
+
+        total_traces = len(all_traces)
+
+        # add "Mostrar todos" button
+        buttons.append(self._build_show_all_button(total_traces))
+
+        # create a button for each lambda_angle
+        for lambda_angle, indices in trace_indices_map.items():
+            buttons.append(self._build_visibility_button(lambda_angle, indices, total_traces))
+
+        return {"traces": all_traces, "buttons": buttons}
+
+    def _build_scatter3d_trace(self, x, y, z, color, text, is_capped_list, capped=True):
+        # filter points based on capped status
+        filtered_x, filtered_y, filtered_z, filtered_color, filtered_text = [], [], [], [], []
+        for i, is_capped in enumerate(is_capped_list):
+            if is_capped == capped:
+                filtered_x.append(x[i])
+                filtered_y.append(y[i])
+                filtered_z.append(z[i])
+                filtered_color.append(color[i] if capped is False else "Grey")
+                filtered_text.append(text[i])
+
+        return go.Scatter3d(
+            x=filtered_x,
+            y=filtered_y,
+            z=filtered_z,
+            mode='markers',
+            marker=dict(size=2, color=filtered_color),
+            text=filtered_text,
+            hoverinfo='text',
+            name='Contorno diagrama de interacción',
+            visible=True,
+            showlegend=False,
+            opacity=0.10 if capped else 1
+        )
+
+    def _build_verify_trace(self, estado_subset):
+        return go.Scatter3d(
+            x=estado_subset["x"],
+            y=estado_subset["y"],
+            z=estado_subset["z"],
+            mode='markers',
+            marker=dict(size=4, color="black", symbol='diamond-open'),
+            text=self.hover_text_estados(
+                estado_subset["x"], estado_subset["y"], estado_subset["z"], estado_subset["nombre"]
+            ),
+            hoverinfo='text',
+            name='Estados de carga',
+            visible=True,
+            showlegend=False
+        )
+
+    def _build_show_all_button(self, total_traces):
+        return dict(
+            label="Mostrar todos",
+            method="update",
+            args=[{"visible": [True] * total_traces}]
+        )
+
+    def _build_visibility_button(self, lambda_angle, indices_to_show, total_traces):
+        visible = [False] * total_traces
+        for idx in indices_to_show:
+            visible[idx] = True
+
+        return dict(
+            label=f"λ={lambda_angle}º",
+            method="update",
+            args=[{"visible": visible}]
+        )
+
     def print_2d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
-                 lista_color_total,
+                 lista_color_total, is_capped_list,
                  data_subsets):
         fig = go.Figure(layout_template="plotly_white")
         lista_x_total = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for
@@ -549,11 +657,17 @@ class ACSAHEPlotlyEngine(object):
         nombre = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
         text_estados_2d = self.hover_text_estados_2d(X, Y, nombre)
 
+        opacity_lambda = lambda bool: 0.07 if bool is True else 1.00
+        modified_color_list = lista_color_total.copy()
+        for i, color in enumerate(lista_color_total):
+            if is_capped_list[i]:
+                modified_color_list[i] = "Grey"
+
         fig.add_trace(go.Scatter(
             x=lista_x_total,
             y=lista_z_total,
             mode='markers',
-            marker=dict(size=2, color=lista_color_total),
+            marker=dict(size=4, color=modified_color_list, opacity=[opacity_lambda(x) for x in is_capped_list]),
             text=lista_text_total,
             hoverinfo='text',
             name='Contorno diagrama de interacción',
@@ -564,8 +678,8 @@ class ACSAHEPlotlyEngine(object):
             x=X,
             y=Y,
             mode='markers',
-            marker=dict(size=10,
-                        color='#1f77b4',
+            marker=dict(size=14,
+                        color='black',
                         symbol='diamond-open'),
             text=text_estados_2d,
             hoverinfo='text',
@@ -613,59 +727,6 @@ class ACSAHEPlotlyEngine(object):
 
         return fig
 
-    def agregar_diferentes_botones(self, fig, data_subsets, estados_subsets):
-        traces = [(1, "Mostrar todos")]
-        # Add each subset as a separate trace, initially invisible
-        for angulo, subset in sorted(data_subsets.items(), key=lambda item: float(item[0])):
-            traces.append((1, f"λ={angulo}º"))
-            fig.add_trace(go.Scatter3d(
-                x=subset['x'],
-                y=subset['y'],
-                z=subset['z'],
-                mode='markers',
-                marker=dict(size=2, color=subset['color']),
-                text=subset['text'],
-                hoverinfo='text',
-                name=f"λ={angulo}º",
-                showlegend=False,
-                visible=False  # Initially invisible
-            ))
-            if angulo in estados_subsets.keys():
-                fig.add_trace(go.Scatter3d(
-                    x=estados_subsets[angulo]['x'],
-                    y=estados_subsets[angulo]['y'],
-                    z=estados_subsets[angulo]['z'],
-                    mode='markers',
-                    marker=dict(size=4,
-                                color='black',
-                                symbol='diamond-open'),
-                    text=self.hover_text_estados(estados_subsets[angulo]['x'],
-                                                 estados_subsets[angulo]['y'],
-                                                 estados_subsets[angulo]['z'],
-                                                 estados_subsets[angulo]['nombre']),
-                    hoverinfo='text',
-                    name=f"λ={angulo}º",
-                    visible=False,
-                    showlegend=False
-                ))
-                traces.append(2)
-
-        buttons = []
-        for i, value in enumerate(traces):
-            if value == 2:
-                continue
-            visible_state = [False] * len(traces)
-            visible_state[i] = True
-            if i < len(traces) - 1 and isinstance(traces[i + 1], int) and traces[i + 1] == 2:
-                visible_state[i + 1] = True
-
-            buttons.append(dict(
-                label=value[1],
-                method="update",
-                args=[{"visible": visible_state}]
-            ))
-        return buttons
-
     @staticmethod
     def hover_text_2d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante):
         M_lista = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y in
@@ -693,8 +754,9 @@ class ACSAHEPlotlyEngine(object):
             for x, y, estado in zip(lista_x, lista_y, lista_estado)]
 
     @staticmethod
-    def configuracion_descarga_imagen(self, file_name="ACSAHE"):
+    def get_fig_html_config(file_name="ACSAHE"):
         return {
+            'responsive': True,
             'toImageButtonOptions': {
                 'format': 'png',
                 'filename': file_name,

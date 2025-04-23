@@ -8,6 +8,7 @@ import math
 import numpy as np
 from scipy.optimize import fsolve
 from functools import lru_cache
+import copy
 
 from geometry.section_analysis import ACSAHEGeometricSolution
 
@@ -20,16 +21,17 @@ def show_message(message, titulo="Mensaje"):
 
 class DiagramaInteraccion2D:
 
-    def __init__(self, angulo_plano_de_carga, solucion_geometrica: ACSAHEGeometricSolution):
-        self.geometria = solucion_geometrica
+    def __init__(self, angulo_plano_de_carga, geometric_solution: ACSAHEGeometricSolution):
+        self.geometric_solution = geometric_solution
         self.concrete_element_array = self.get_concrete_element_array()
         self.rebar_array = self.get_rebar_array()
         self.prestressed_reinforcement_array = self.get_prestressed_reinforcement_array()
         self.angulo_plano_de_carga_esperado = angulo_plano_de_carga
-        self.phi_minoriacion_resistencia = solucion_geometrica.problema["phi_variable"]
+        self.phi_strength_reduction_factor = geometric_solution.problema["phi_variable"]
         try:
             self.lista_planos_sin_solucion = []
-            self.lista_resultados = self.iterar()
+            self.interaction_diagram_point_list = self.iterate_solution()
+            self.review_capped_points()
         except Exception as e:
             traceback.print_exc()
             show_message(e)
@@ -39,12 +41,12 @@ class DiagramaInteraccion2D:
 
     def get_concrete_element_array(self):
         return np.array([
-            (element.xg, element.yg, element.area, 0.0, 0.0) for element in self.geometria.EEH],
+            (element.xg, element.yg, element.area, 0.0, 0.0) for element in self.geometric_solution.EEH],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float), ('strain', float)])
 
     def get_rebar_array(self):
         return np.array([
-            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.ey) for rebar in self.geometria.EA],
+            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.ey) for rebar in self.geometric_solution.EA],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
                    ('strain', float),
                    ('ey', float)  # ey is later used for computing the strength reduction factor Φ (Table 21.2.2)
@@ -54,27 +56,27 @@ class DiagramaInteraccion2D:
         return np.array([
             (rebar.xg, rebar.yg, rebar.area, 0.0,
              0.0, rebar.def_elastica_hormigon_perdidas, rebar.deformacion_de_pretensado_inicial, 0.0)
-            for rebar in self.geometria.EAP],
+            for rebar in self.geometric_solution.EAP],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
                    ('flexural_strain', float), ('concrete_shortening_strain', float), ('effective_strain', float), ('total_strain', float)])
 
-    def iterar(self):
+    def iterate_solution(self):
         """Método principal para la obtención de los diagramas de interacción."""
-        lista_de_puntos = []
+        interaction_diagram_points = []
         try:
             with ThreadPoolExecutor(max_workers=int(os.cpu_count())) as executor:
-                futures = [executor.submit(self.resolver_plano, plano) for plano in
-                           self.geometria.planos_de_deformacion]
+                futures = [executor.submit(self.solve_limit_planes, plano) for plano in
+                           self.geometric_solution.planos_de_deformacion]
                 for future in as_completed(futures):
-                    resultado = future.result()
-                    if resultado is not None:
-                        lista_de_puntos.append(resultado)
+                    result = future.result()
+                    if result is not None:
+                        interaction_diagram_points.append(result)
         except Exception as e:
             traceback.print_exc()
-            print(e)
-        return lista_de_puntos
+            raise(e)
+        return interaction_diagram_points
 
-    def resolver_plano(self, plano_de_deformacion):
+    def solve_limit_planes(self, plano_de_deformacion):
         try:
             sol = fsolve(
                 self.evaluar_diferencia_para_inc_eje_neutro,
@@ -95,7 +97,8 @@ class DiagramaInteraccion2D:
                     "color": self.numero_a_color_arcoiris(abs(plano_de_deformacion[3])),
                     "phi": phi,
                     "Mx": Mx,
-                    "My": My
+                    "My": My,
+                    "is_capped": False  # Some compression points will later be capped according to 22.4.2.
                 }
             else:  # Used only for debugging solution-less points
                 pass
@@ -179,14 +182,14 @@ class DiagramaInteraccion2D:
         return lambda rotated_y: rotated_y * A + B
 
     def obtener_y_determinante_positivo(self, def_extrema, rebar_array, prestressed_array, concrete_array):
-        if def_extrema <= 0 or def_extrema < self.geometria.deformacion_maxima_de_acero:
+        if def_extrema <= 0 or def_extrema < self.geometric_solution.deformacion_maxima_de_acero:
             return concrete_array["neutral_axis_distance"][-1]  # Most compressed concrete fiber
 
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
         return np.max(neutral_axis_distances)  # Most distant (traction) steel fiber
 
     def obtener_y_determinante_negativo(self, extreme_strain, rebar_array, prestressed_array, concrete_array):
-        if extreme_strain <= 0 or extreme_strain < self.geometria.deformacion_maxima_de_acero:
+        if extreme_strain <= 0 or extreme_strain < self.geometric_solution.deformacion_maxima_de_acero:
             return concrete_array["neutral_axis_distance"][0]  # Distance to compressed concrete fiber.
 
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
@@ -205,7 +208,7 @@ class DiagramaInteraccion2D:
         # -------------------- 2. Concrete --------------------
         max_compression_strain = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
         concrete_forces = np.array([
-            self.geometria.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=max_compression_strain) * a
+            self.geometric_solution.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=max_compression_strain) * a
             for e, a in zip(rot_concrete_array['strain'], rot_concrete_array['area'])
         ])
         sumFH = np.sum(concrete_forces)
@@ -214,7 +217,7 @@ class DiagramaInteraccion2D:
 
         # -------------------- 3. Passive Rebar --------------------
         rebar_forces = np.array([
-            self.geometria.EA[0].relacion_constitutiva(e) * a for e, a in zip(
+            self.geometric_solution.EA[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_rebar_array['strain'],
                 rot_rebar_array['area']
             )
@@ -232,7 +235,7 @@ class DiagramaInteraccion2D:
         )
 
         prestressed_forces = np.array([
-            self.geometria.EAP[0].relacion_constitutiva(e) * a for e, a in zip(
+            self.geometric_solution.EAP[0].relacion_constitutiva(e) * a for e, a in zip(
                 rot_prestressed_array['total_strain'],
                 rot_prestressed_array['area']
             )
@@ -244,7 +247,7 @@ class DiagramaInteraccion2D:
         # -------------------- 5. Strength Reduction Factor --------------------
 
         phi = self.get_strength_reduction_factor_2024(
-            rot_rebar_array, rot_prestressed_array, self.geometria.tipo_estribo
+            rot_rebar_array, rot_prestressed_array, self.geometric_solution.tipo_estribo
         )
 
         # -------------------- 6. Totals --------------------
@@ -255,19 +258,19 @@ class DiagramaInteraccion2D:
         return sumF, Mx, My, phi
 
     def get_strength_reduction_factor(self, **kwargs):
-        if isinstance(self.phi_minoriacion_resistencia, float):
-            return self.phi_minoriacion_resistencia
-        elif "CIRSOC 201-2005" in self.phi_minoriacion_resistencia:
+        if isinstance(self.phi_strength_reduction_factor, float):
+            return self.phi_strength_reduction_factor
+        elif "CIRSOC 201-2005" in self.phi_strength_reduction_factor:
             return self.get_strength_reduction_factor_2005(**kwargs)
-        elif "CIRSOC 201-2024" in self.phi_minoriacion_resistencia:
+        elif "CIRSOC 201-2024" in self.phi_strength_reduction_factor:
             return self.get_strength_reduction_factor_2024(**kwargs)
         else:
             return 1.0
 
     def get_strength_reduction_factor_2005(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
         # Manual override
-        if isinstance(self.phi_minoriacion_resistencia, float):
-            return self.phi_minoriacion_resistencia
+        if isinstance(self.phi_strength_reduction_factor, float):
+            return self.phi_strength_reduction_factor
 
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
 
@@ -294,8 +297,8 @@ class DiagramaInteraccion2D:
 
     def get_strength_reduction_factor_2024(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
         # Manual override
-        if isinstance(self.phi_minoriacion_resistencia, float):
-            return self.phi_minoriacion_resistencia
+        if isinstance(self.phi_strength_reduction_factor, float):
+            return self.phi_strength_reduction_factor
 
         phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.75
         phi_max = 0.90
@@ -359,3 +362,35 @@ class DiagramaInteraccion2D:
         azul = int(azul * 255)
 
         return [rojo, verde, azul]
+
+    def _get_maximum_compression_value(self):
+        """"Getting maximum nominal value for Pn according to 22.4.2.1"""
+        transverse_reinf_factor = 0.80 if self.geometric_solution.tipo_estribo == "Estribos" else 0.85
+        gross_area = self.geometric_solution.seccion_H.area
+        fc = self.geometric_solution.hormigon.fc / 10
+        if len(self.geometric_solution.EA) == 0 and len(self.geometric_solution.EAP) == 0:
+            return transverse_reinf_factor * 0.85 * fc * gross_area
+        elif len(self.geometric_solution.EAP) == 0:
+            fy = self.geometric_solution.EA[0].fy
+            Ast = self.geometric_solution.seccion_H.Ast
+            po = 0.85*fc*(gross_area-Ast) + fy * Ast  # 22.4.2.2
+            return transverse_reinf_factor * po
+        else:
+            fy = self.geometric_solution.EA[0].fy
+            Ast = self.geometric_solution.seccion_H.Ast
+            fse = self.geometric_solution.EAP[0].fse
+            Ep = self.geometric_solution.EAP[0].Eps
+            Apt = self.geometric_solution.seccion_H.Apt
+            Apd = Apt  # Revisar
+            po = 0.85*fc*(gross_area-Ast-Apd)+fy*Ast-(fse-0.003*Ep)*Apt  # 22.4.2.3
+            return transverse_reinf_factor * po
+
+    def review_capped_points(self):
+        compression_force_limit = self._get_maximum_compression_value()
+        solution_copy = self.interaction_diagram_point_list.copy()
+        for index, interaction_diagram_point in enumerate(solution_copy):
+            if -interaction_diagram_point["sumF"]/interaction_diagram_point["phi"] > compression_force_limit:
+                copy_point = copy.deepcopy(self.interaction_diagram_point_list[index])
+                copy_point["sumF"] = -compression_force_limit*copy_point["phi"]
+                self.interaction_diagram_point_list.append(copy_point)
+                self.interaction_diagram_point_list[index]["is_capped"] = True  # Overwriting original point.

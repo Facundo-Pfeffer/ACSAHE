@@ -1,6 +1,4 @@
-from functools import lru_cache
 import plotly.graph_objects as go
-
 
 class BarraAceroPretensado():
     tipos_de_acero_y_valores = {
@@ -55,7 +53,6 @@ class BarraAceroPretensado():
         self.x_girado = None
         self.def_elastica_hormigon_perdidas = None
 
-    @lru_cache(maxsize=512)
     def relacion_constitutiva(self, e):
         """Relación constitutiva propuesta por Menegotto y Pinto, se recomienda que este método sea sobrescrito
         con la relación constitutiva que quiera utilizarse para el acero de pretensado, como la del fabricante."""

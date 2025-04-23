@@ -1,6 +1,3 @@
-from functools import lru_cache
-
-
 class Hormigon:
     B1 = None
 
@@ -9,7 +6,6 @@ class Hormigon:
         self.E = 470 * (int(tipo)**0.5)  # kN/cm²
         self.B1 = self.obtener_beta_1()
 
-    @lru_cache(maxsize=512)
     def relacion_constitutiva_simplificada(self, e, e_max_comp):
         """
         Obtiene la tensión (en kN/cm²) utilizando las hipótesis planteadas en el apartado 10.2 del CIRSOC 201 (2005).

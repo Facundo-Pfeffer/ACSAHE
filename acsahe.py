@@ -39,7 +39,7 @@ class ACSAHE:
         self.plotly_engine = ACSAHEPlotlyEngine()
 
         self.x_total, self.y_total, self.z_total = [], [], []
-        self.hover_text_total, self.color_total = [], []
+        self.hover_text_total, self.color_total, self.is_capped_total = [], [], []
         self.nominal_x_total, self.nominal_y_total, self.nominal_z_total = [], [], []
 
         self.start_process()
@@ -80,8 +80,8 @@ class ACSAHE:
 
                     partial_2d_solution = DiagramaInteraccion2D(angle if angle != -1 else 0.00, geometric_solution)
 
-                    coordinates_3d, colors_partial = geometric_solution.get_3d_coordinates(
-                        partial_2d_solution.lista_resultados)
+                    coordinates_3d, colors_partial, is_capped_partial = geometric_solution.get_3d_coordinates(
+                        partial_2d_solution.interaction_diagram_point_list)
                     x_partial, y_partial, z_partial, phi_partial = coordinates_3d
                     is_phi_constant = isinstance(geometric_solution.problema["phi_variable"], float)
                     hover_text_partial = self._get_hover_text(
@@ -93,7 +93,8 @@ class ACSAHE:
                         "z": z_partial.copy(),
                         "phi": phi_partial.copy(),
                         "text": hover_text_partial.copy(),
-                        "color": colors_partial.copy()
+                        "color": colors_partial.copy(),
+                        "is_capped": is_capped_partial.copy()
                     }
 
                     self.x_total.extend(x_partial)
@@ -101,6 +102,7 @@ class ACSAHE:
                     self.z_total.extend(z_partial)
                     self.hover_text_total.extend(hover_text_partial)
                     self.color_total.extend(colors_partial)
+                    self.is_capped_total.extend(is_capped_partial)
 
                     self.nominal_x_total.extend((np.array(x_partial) / np.array(phi_partial)).tolist())
                     self.nominal_y_total.extend((np.array(y_partial) / np.array(phi_partial)).tolist())
@@ -114,7 +116,7 @@ class ACSAHE:
                     self.plotly_engine.build_result_html(
                         geometric_solution,
                         self.x_total, self.y_total, self.z_total,
-                        self.hover_text_total, self.color_total,
+                        self.hover_text_total, self.color_total, self.is_capped_total,
                         self.plotly_data_subsets,
                         self.path_to_exe,
                         self.input_file_name
