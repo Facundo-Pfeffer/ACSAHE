@@ -15,7 +15,7 @@ class ACSAHEUserInterface(QMainWindow):
 
     def launch_acsahe(self):
         from acsahe import ACSAHE
-        file_path = self.excel_file_paths[0]
+        file_path = self.main_excel_file_path_list[0]
         file_name = os.path.basename(file_path)
 
         self.acsahe_instance = ACSAHE(
@@ -23,7 +23,8 @@ class ACSAHEUserInterface(QMainWindow):
             input_file_name=file_name,
             path_to_input_file=file_path,
             html_folder_path=self.html_folder_path if self.html_checkbox.isChecked() else None,
-            pdf_folder_path=self.pdf_folder_path if self.pdf_checkbox.isChecked() else None
+            excel_folder_path=self.excel_folder_path if self.excel_checkbox.isChecked() else None,
+            docx_folder_path=self.docx_folder_path if self.docx_checkbox.isChecked() else None
         )
 
     def init_ui(self):
@@ -36,7 +37,7 @@ class ACSAHEUserInterface(QMainWindow):
             on_click=self.save_excel_template
         )
 
-        excel_row, self.excel_button, _ = create_select_file_row(
+        excel_row, self.main_excel_button, _ = create_select_file_row(
             label_text="📁 Seleccionar archivo(s) Excel",
             object_name="excel_button",
             on_main_click=self.select_excel_file,
@@ -45,13 +46,8 @@ class ACSAHEUserInterface(QMainWindow):
             spacing=1
         )
 
-        excel_footer = create_text_row(
-            "Generar nuevo archivo de entrada de datos",
-            on_click=self.save_excel_template
-        )
-
         html_row, self.html_checkbox, self.html_folder_button = create_checkbox_folder_row(
-            checkbox_text="Guardar archivos .html ",
+            checkbox_text="Guardar archivos resultado .html ",
             checkbox_object_name="html_checkbox",
             tooltip_text="Activar si desea guardar los resultados interactivos .html del análisis en la carpeta destino.",
             button_text="📁 Seleccionar carpeta destino",
@@ -62,14 +58,26 @@ class ACSAHEUserInterface(QMainWindow):
             button_fixed_width=350
         )
 
-        pdf_row, self.pdf_checkbox, self.pdf_folder_button = create_checkbox_folder_row(
-            checkbox_text="Generar reporte en PDF ",
-            checkbox_object_name="pdf_checkbox",
-            tooltip_text="Activar si se desea generar un informe en formato PDF con los resultados del análisis.",
+        excel_result_row, self.excel_checkbox, self.excel_folder_button = create_checkbox_folder_row(
+            checkbox_text="Volcar resultados en planilla Excel ",
+            checkbox_object_name="excel_checkbox",
+            tooltip_text="Activar si desea guardar los resultados numéricos en un archivo Excel.",
             button_text="📁 Seleccionar carpeta destino",
-            button_object_name="pdf_folder_button",
-            on_checkbox_toggle=self.toggle_pdf_folder,
-            on_button_click=self.select_pdf_folder,
+            button_object_name="excel_folder_button",
+            on_checkbox_toggle=self.toggle_excel_folder,
+            on_button_click=self.select_excel_folder,
+            button_alignment=Qt.AlignRight,
+            button_fixed_width=350
+        )
+
+        docx_row, self.docx_checkbox, self.docx_folder_button = create_checkbox_folder_row(
+            checkbox_text="Generar reporte en Word ",
+            checkbox_object_name="docx_checkbox",
+            tooltip_text="Activar si se desea generar un informe en formato docx con los resultados del análisis.",
+            button_text="📁 Seleccionar carpeta destino",
+            button_object_name="docx_folder_button",
+            on_checkbox_toggle=self.toggle_docx_folder,
+            on_button_click=self.select_docx_folder,
             button_fixed_width=350
         )
 
@@ -78,7 +86,8 @@ class ACSAHEUserInterface(QMainWindow):
             excel_row,
             # excel_footer,
             html_row,
-            pdf_row,
+            excel_result_row,
+            docx_row,
             self.create_process_button(font),
             self.create_message_label(font),
             self.create_progress_bar(font)
@@ -121,11 +130,11 @@ class ACSAHEUserInterface(QMainWindow):
         return self.logoLabel
 
     def create_excel_selector(self, font):
-        self.excel_button = QPushButton("📁 Seleccionar archivo(s) Excel")
-        self.excel_button.setFont(font)
-        self.excel_button.setIcon(QIcon())  # Reset icon when default text is used
-        self.excel_button.clicked.connect(self.select_excel_file)
-        return self.excel_button
+        self.main_excel_button = QPushButton("📁 Seleccionar archivo(s) Excel")
+        self.main_excel_button.setFont(font)
+        self.main_excel_button.setIcon(QIcon())  # Reset icon when default text is used
+        self.main_excel_button.clicked.connect(self.select_excel_file)
+        return self.main_excel_button
 
     def create_process_button(self, font):
         label_execute = "Ejecutar ACSAHE"
@@ -163,33 +172,42 @@ class ACSAHEUserInterface(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar archivo(s) Excel", "",
                                                 "Excel Files (*.xlsm *.xls *.xlsx)")
         if files:
-            self.excel_file_paths = files
+            self.main_excel_file_path_list = files
             display_names = ', '.join([os.path.basename(f) for f in files])
             icon_path = "build/icons/excel_icon.png"
             if os.path.exists(icon_path):
-                self.excel_button.setIcon(QIcon(icon_path))
-            self.excel_button.setText(f" {display_names}")
+                self.main_excel_button.setIcon(QIcon(icon_path))
+            self.main_excel_button.setText(f" {display_names}")
         else:
-            self.excel_button.setText("📁 Seleccionar archivo(s) Excel")
-            self.excel_button.setIcon(QIcon())
+            self.main_excel_button.setText("📁 Seleccionar archivo(s) Excel")
+            self.main_excel_button.setIcon(QIcon())
 
     def toggle_html_folder(self, state):
         self.html_folder_button.setEnabled(state == Qt.Checked)
 
-    def toggle_pdf_folder(self, state):
-        self.pdf_folder_button.setEnabled(state == Qt.Checked)
+    def toggle_excel_folder(self, state):
+        self.excel_folder_button.setEnabled(state == Qt.Checked)
+
+    def toggle_docx_folder(self, state):
+        self.docx_folder_button.setEnabled(state == Qt.Checked)
 
     def select_html_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para .html")
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para archivo .html")
         if folder:
             self.html_folder_path = folder
             self.html_folder_button.setText(f"📁 {os.path.basename(folder)}")
 
-    def select_pdf_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para PDF")
+    def select_excel_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para archivo .xls")
         if folder:
-            self.pdf_folder_path = folder
-            self.pdf_folder_button.setText(f"📁 {os.path.basename(folder)}")
+            self.excel_folder_path = folder
+            self.excel_folder_button.setText(f"📁 {os.path.basename(folder)}")
+
+    def select_docx_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Seleccionar carpeta para archivo .docx")
+        if folder:
+            self.docx_folder_path = folder
+            self.docx_folder_button.setText(f"📁 {os.path.basename(folder)}")
 
     def start_processing(self):
         if not self._validate_folders_selected():
@@ -201,8 +219,8 @@ class ACSAHEUserInterface(QMainWindow):
         self.progress.setValue(0)
         QApplication.processEvents()
 
-        if hasattr(self, "excel_file_paths") and self.excel_file_paths:
-            file_path = self.excel_file_paths[0]
+        if hasattr(self, "main_excel_file_path_list") and self.main_excel_file_path_list:
+            file_path = self.main_excel_file_path_list[0]
             file_name = os.path.basename(file_path)
 
             self.thread = QThread()
@@ -210,7 +228,8 @@ class ACSAHEUserInterface(QMainWindow):
                 file_name=file_name,
                 file_path=file_path,
                 html_folder_path=self.html_folder_path if self.html_checkbox.isChecked() else None,
-                pdf_folder_path=self.pdf_folder_path if self.pdf_checkbox.isChecked() else None,
+                excel_folder_path=self.excel_folder_path if self.excel_checkbox.isChecked() else None,
+                docx_folder_path=self.docx_folder_path if self.docx_checkbox.isChecked() else None,
                 gui=self
             )
             self.worker.moveToThread(self.thread)
@@ -251,38 +270,46 @@ class ACSAHEUserInterface(QMainWindow):
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
 
-                self.excel_file_paths = config.get("excel_files", [])
-                if self.excel_file_paths and all(Path(f).exists() for f in self.excel_file_paths):
-                    display_names = ', '.join([os.path.basename(f) for f in self.excel_file_paths])
-                    self.excel_button.setText(f"  {display_names}")
+                self.main_excel_file_path_list = config.get("excel_files", [])
+                if self.main_excel_file_path_list and all(Path(f).exists() for f in self.main_excel_file_path_list):
+                    display_names = ', '.join([os.path.basename(f) for f in self.main_excel_file_path_list])
+                    self.main_excel_button.setText(f"  {display_names}")
                 icon_path = "build/icons/excel_icon.png"
                 if os.path.exists(icon_path):
-                    self.excel_button.setIcon(QIcon(icon_path))
+                    self.main_excel_button.setIcon(QIcon(icon_path))
 
                 self.html_checkbox.setChecked(config.get("save_html", False))
-                self.pdf_checkbox.setChecked(config.get("generate_pdf", False))
+                self.excel_checkbox.setChecked(config.get("generate_excel", False))
+                self.docx_checkbox.setChecked(config.get("generate_docx", False))
 
                 html_path = config.get("html_folder", "")
                 if html_path and Path(html_path).exists():
                     self.html_folder_path = html_path
                     self.html_folder_button.setText(f"📁 {os.path.basename(html_path)}")
 
-                pdf_path = config.get("pdf_folder", "")
-                if pdf_path and Path(pdf_path).exists():
-                    self.pdf_folder_path = pdf_path
-                    self.pdf_folder_button.setText(f"📁 {os.path.basename(pdf_path)}")
+                excel_path = config.get("excel_folder", "")
+                if excel_path and Path(excel_path).exists():
+                    self.excel_folder_path = excel_path
+                    self.excel_folder_button.setText(f"📁 {os.path.basename(excel_path)}")
+
+                docx_path = config.get("docx_folder", "")
+                if docx_path and Path(docx_path).exists():
+                    self.docx_folder_path = docx_path
+                    self.docx_folder_button.setText(f"📁 {os.path.basename(docx_path)}")
         except Exception as e:  # Message for debugging only, won't show to user.
             print(f"Failed to load user settings: {e}")
 
     def _save_user_settings(self):
+        config = {
+            "excel_files": getattr(self, "main_excel_file_path_list", []),
+            "save_html": self.html_checkbox.isChecked(),
+            "generate_excel": self.excel_checkbox.isChecked(),
+            "generate_docx": self.docx_checkbox.isChecked(),
+            "html_folder": getattr(self, "html_folder_path", ""),
+            "excel_folder": getattr(self, "excel_folder_path", ""),
+            "docx_folder": getattr(self, "docx_folder_path", ""),
+        }
         try:
-            config = {
-                "excel_files": getattr(self, "excel_file_paths", []),
-                "save_html": self.html_checkbox.isChecked(),
-                "generate_pdf": self.pdf_checkbox.isChecked(),
-                "html_folder": getattr(self, "html_folder_path", ""),
-                "pdf_folder": getattr(self, "pdf_folder_path", ""),
-            }
             with open(self._get_config_path(), "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
         except Exception as e:
@@ -293,25 +320,33 @@ class ACSAHEUserInterface(QMainWindow):
             self.message_label.setVisible(True)
             self.message_label.setText("Por favor seleccione una carpeta para guardar los archivos .html")
             return False
-        if self.pdf_checkbox.isChecked() and not hasattr(self, "pdf_folder_path"):
+        if self.excel_checkbox.isChecked() and not hasattr(self, "excel_folder_path"):
             self.message_label.setVisible(True)
-            self.message_label.setText("Por favor seleccione una carpeta para guardar el PDF")
+            self.message_label.setText("Por favor seleccione una carpeta para guardar los archivos .xls")
+            return False
+        if self.docx_checkbox.isChecked() and not hasattr(self, "docx_folder_path"):
+            self.message_label.setVisible(True)
+            self.message_label.setText("Por favor seleccione una carpeta para guardar el docx")
             return False
         return True
 
     def _reset_all_selections(self):
-        self.excel_file_paths = []
-        self.excel_button.setText("📁 Seleccionar archivo(s) Excel de entrada de datos.")
-        self.excel_button.setIcon(QIcon())
+        self.main_excel_file_path_list = []
+        self.main_excel_button.setText("📁 Seleccionar archivo(s) Excel de entrada de datos.")
+        self.main_excel_button.setIcon(QIcon())
 
         self.html_checkbox.setChecked(False)
-        self.pdf_checkbox.setChecked(False)
+        self.excel_checkbox.setChecked(False)
+        self.docx_checkbox.setChecked(False)
 
         self.html_folder_path = ""
         self.html_folder_button.setText("📁 Seleccionar carpeta destino")
 
-        self.pdf_folder_path = ""
-        self.pdf_folder_button.setText("📁 Seleccionar carpeta destino")
+        self.excel_folder_path = ""
+        self.excel_folder_button.setText("📁 Seleccionar carpeta destino")
+
+        self.docx_folder_path = ""
+        self.docx_folder_button.setText("📁 Seleccionar carpeta destino")
 
     def save_excel_template(self):
         default_path = os.path.join(str(Path.home()), "ACSAHE.xlsm")
@@ -326,31 +361,32 @@ class ACSAHEUserInterface(QMainWindow):
             copyfile("build/ACSAHE.xlsm", save_path)
 
             # Initialize list if empty
-            if not hasattr(self, "excel_file_paths") or not isinstance(self.excel_file_paths, list):
-                self.excel_file_paths = []
+            if not hasattr(self, "main_excel_file_path_list") or not isinstance(self.main_excel_file_path_list, list):
+                self.main_excel_file_path_list = []
 
             # Append and deduplicate
-            if save_path not in self.excel_file_paths:
-                self.excel_file_paths.append(save_path)
+            if save_path not in self.main_excel_file_path_list:
+                self.main_excel_file_path_list.append(save_path)
 
-            display_names = ', '.join([os.path.basename(f) for f in self.excel_file_paths])
-            self.excel_button.setText(f" {display_names}")
+            display_names = ', '.join([os.path.basename(f) for f in self.main_excel_file_path_list])
+            self.main_excel_button.setText(f" {display_names}")
 
             icon_path = "build/icons/excel_icon.png"
             if os.path.exists(icon_path):
-                self.excel_button.setIcon(QIcon(icon_path))
+                self.main_excel_button.setIcon(QIcon(icon_path))
 
 
 class ACSAHEWorker(QObject):
     finished = pyqtSignal()
     progress = pyqtSignal(str, int)
 
-    def __init__(self, file_name, file_path, html_folder_path, pdf_folder_path, gui):
+    def __init__(self, file_name, file_path, html_folder_path, excel_folder_path, docx_folder_path, gui):
         super().__init__()
         self.input_file_name = file_name
         self.path_to_input_file = file_path
         self.html_folder_path = html_folder_path
-        self.pdf_folder_path = pdf_folder_path
+        self.excel_folder_path = excel_folder_path
+        self.docx_folder_path = docx_folder_path
         self.gui = gui
 
     def showNormal(self):
@@ -378,6 +414,7 @@ class ACSAHEWorker(QObject):
             input_file_name=self.input_file_name,
             path_to_input_file=self.path_to_input_file,
             html_folder_path=self.html_folder_path if hasattr(self, "html_folder_path") else None,
-            pdf_folder_path=self.pdf_folder_path
+            excel_folder_path=self.excel_folder_path,
+            docx_folder_path=self.docx_folder_path
         )
         self.finished.emit()

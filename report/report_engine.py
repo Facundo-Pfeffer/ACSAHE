@@ -40,7 +40,8 @@ class ACSAHEReportEngine:
             ])
         rows.append(['Armaduras Transversales', 'Tipo de armadura transversal seleccionada.', self.geometric_solution.tipo_estribo])
         columns = ['Material', 'Descripción', 'Valor']
-        self.utils.insert_table('[Tabla de materiales]', columns, rows)
+        column_widths = [0.15, 0.70, 0.15]
+        self.utils.insert_table('[Tabla de materiales]', columns, rows, col_widths_percentage=column_widths)
 
     def _generate_section_properties_table(self):
         rows = [
@@ -60,7 +61,14 @@ class ACSAHEReportEngine:
         rows.append(['Discretización', f"Tipo de discretización elegida: {self.geometric_solution.nivel_disc}.", "\n".join(disc_text)])
 
         if self.geometric_solution.EAP:
-            rows.append(['Pretensado', 'Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.', self.geometric_solution.mostrar_informacion_pretensado()])
+            rows.append(['Pretensado', 'Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.', self.show_prestressed_information()])
 
         columns = ['Propiedad', 'Descripción', 'Valor']
-        self.utils.insert_table('[Tabla de propiedades de la sección]', columns, rows)
+        column_widths = [0.15, 0.70, 0.15]
+        self.utils.insert_table('[Tabla de propiedades de la sección]', columns, rows,  col_widths_percentage=column_widths)
+
+    def show_prestressed_information(self):
+        gs = self.geometric_solution
+        if not gs.EAP:
+            return ''
+        return f"ec: {gs.ec:.2e}<br>φx: {gs.phix:.2e}<br>φy: {gs.phiy:.2e}"

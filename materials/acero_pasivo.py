@@ -3,16 +3,18 @@ import plotly.graph_objects as go
 
 
 class BarraAceroPasivo():
-    tipos_de_acero_y_valores = {"ADN 420": {"fy": 420}, "ADN 500": {"fy": 500}, "AL 220": {"fy": 220}}
+    default_strain_stress_relation_vars = {"ADN 420": {"fy": 420}, "ADN 500": {"fy": 500}, "AL 220": {"fy": 220}}
     E = None
     fy = None
     ey = None
     eu = None
 
     def __init__(self, x, y, d, identificador):
-        """IMPORTANTE
-        Antes de inicializar una instancia de esta clase, los valores de fy [tensión de fluencia del acero] y
-        E [módulo de elasticidad del material] deben ser inicializados."""
+        """
+        IMPORTANT
+        Before initializing an instance of this class, the values of fy [steel yield stress] and
+        E [modulus of elasticity of the material] must be set.
+        """
         try:
             self.identificador = int(identificador)
         except Exception:
@@ -26,7 +28,7 @@ class BarraAceroPasivo():
         self.area = math.pi*(d/20)**2  # cm²
         self.y_girado = None
 
-    def relacion_constitutiva(self, e):
+    def stress_strain_eq(self, e):
         """Relación bilineal."""
         if abs(e) > self.ey:
             sign = +1 if e >= 0 else -1
@@ -34,10 +36,10 @@ class BarraAceroPasivo():
         else:
             return self.E * e  # kN/cm²
 
-    def mostrar_relacion_constitutiva(self):
+    def show_stress_strain_curve(self):
         particion_e = range(-1000, 1000)
         x = [e / 100000 for e in particion_e]
-        y = [self.relacion_constitutiva(e_val) for e_val in x]
+        y = [self.stress_strain_eq(e_val) for e_val in x]
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(

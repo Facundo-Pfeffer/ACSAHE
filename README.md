@@ -3,17 +3,25 @@
 ACSAHE es un programa dedicado a la elaboración de Diagramas de Interacción Momento-Normal para secciones arbitrarias de hormigón estructural, basado en la reglamentación CIRSOC 201 de la República Argentina.
 
 Fue desarrollado por Facundo L. Pfeffer en conjunto con el Dr. Ing. Oscar Möller en el Instituto de Mecánica Aplicada y Estructuas (IMAE) de la de la Universidad Nacional de Rosario.
-## Instalación
+## 📦 Instalación
+Coexisten actualmente **dos versiones** del programa ACSAHE: 
+#### 🆕Nueva versión: instalación como app de Windows
+La Nueva versión cuenta con una instalación más sencilla como app de Windows, la posibilidad de correr todo desde un simple archivo .exe, generar reportes en .pdf y más!
+Los pasos para la instalación son:
+1. Descargar el instalador desde la sección [Releases](https://github.com/Facundo-Pfeffer/ACSAHE/releases).
+2. Ejecutar el archivo **Instalador_ACSAHE.exe**.
+3. Seguir las instrucciones del asistente de instalación.
+4. Una vez instalado, podés iniciar el programa desde el **menú de inicio** o el **acceso directo en el escritorio**.
 
-Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado.  **Enlace de descarga:** https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/.
 
-Última versión: 2025-03-10: Bugfixing en acero pasivo "Propuesto por usuario". Sugerencia de 
-Juan Romaris. ¡Gracias por colaborar!
-## Tutoriales
+
+#### 👜Versión Portable
+Esta versión el programa se corre desde la planilla con un archivo macro.  
+Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado.  **Enlace de descarga:** https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
+## Tutoriales en Canal de Youtube
 Para lograr un mejor entendimiento por los usuarios y aprendizaje del software, se ha creado un canal de YouTube en el cual se adicionaran progresivamente tutoriales explicativos.  https://www.youtube.com/playlist?list=PL2vqHDQzjyupe7ISb2vA9EGn0Qr31nW7g
-
 ## 💻 Featured YouTube Videos
-[![Tips and advice for Computer Science students](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=PRESENTACIÓN+ARGENTINA+EN+COLEIC+PANAMÁ:+GANADORA+DEL+PRIMER+PUESTO+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "PRESENTACIÓN ARGENTINA EN COLEIC PANAMÁ: GANADORA DEL PRIMER PUESTO - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
+[![ACSAHE Presentation](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=PRESENTACIÓN+ARGENTINA+EN+COLEIC+PANAMÁ:+GANADORA+DEL+PRIMER+PUESTO+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "PRESENTACIÓN ARGENTINA EN COLEIC PANAMÁ: GANADORA DEL PRIMER PUESTO - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
 
 ## Bibliografía
 [1] Instituto Nacional de Tecnología Industrial (INTI), CIRSOC 201- REGLAMENTO ARGENTINO DE ESTRUCTURAS DE HORMIGÓN. 2005.  

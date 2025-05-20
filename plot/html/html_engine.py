@@ -44,7 +44,7 @@ class ACSAHEHtmlEngine:
             d_ang=geometric_solution.seccion_H.d_ang,
             dr=geometric_solution.seccion_H.dr,
             info_pretensado=(
-                geometric_solution.mostrar_informacion_pretensado()
+                f"ec: {geometric_solution.ec:.2e}<br>φx: {geometric_solution.phix:.2e}<br>φy: {geometric_solution.phiy:.2e}"
                 if geometric_solution.EAP else None
             )
         )

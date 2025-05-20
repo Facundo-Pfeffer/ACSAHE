@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 )
 from tkinter import messagebox
 
-from interaction_diagram.interaction_diagram_builder import DiagramaInteraccion2D
+from interaction_diagram.interaction_diagram_builder import UniaxialInteractionDiagram
 from geometry.section_analysis import ACSAHEGeometricSolution
 from build.utils.plotly_engine import ACSAHEPlotlyEngine
 from report.report_engine import ACSAHEReportEngine
@@ -24,18 +24,22 @@ class ACSAHE:
         "Ultimo": "Construyendo resultados ..."
     }
 
-    def __init__ (self, app_gui, input_file_name, path_to_input_file, html_folder_path=None, pdf_folder_path=None):
+    def __init__(self, app_gui, input_file_name, path_to_input_file, html_folder_path=None, excel_folder_path=None, docx_folder_path=None):
         super().__init__()
         # Gathering useful paths on user's PC
         self.input_file_name = input_file_name
         self.path_to_input_file = path_to_input_file
         self.path_to_exe = self.get_base_path()
+        self.file_name_no_extension = ".".join(
+            self.input_file_name.split(".")[:-1]) if "." in self.input_file_name else self.input_file_name
 
         self.app_gui = app_gui
         self.save_html = bool(html_folder_path)
         self.html_folder_path = html_folder_path
-        self.generate_pdf = bool(pdf_folder_path)
-        self.pdf_folder_path = pdf_folder_path
+        self.generate_pdf = bool(docx_folder_path)
+        self.pdf_folder_path = docx_folder_path
+        self.generate_excel = bool(excel_folder_path)
+        self.excel_folder_path = excel_folder_path
         self.geometric_solution = None
         self.plotly_data_subsets = {}
         self.plotly_engine = ACSAHEPlotlyEngine()
@@ -80,10 +84,10 @@ class ACSAHE:
                     angle = loading_path_angles[step_number - 1]
                     self._update_progress_message(step_number, angle)
 
-                    partial_2d_solution = DiagramaInteraccion2D(angle if angle != -1 else 0.00, geometric_solution)
+                    partial_2d_solution = UniaxialInteractionDiagram(angle if angle != -1 else 0.00, geometric_solution)
 
                     coordinates_3d, colors_partial, is_capped_partial = geometric_solution.get_3d_coordinates(
-                        partial_2d_solution.interaction_diagram_point_list)
+                        partial_2d_solution.interaction_diagram_points_list)
                     x_partial, y_partial, z_partial, phi_partial = coordinates_3d
                     is_phi_constant = isinstance(geometric_solution.problema["phi_variable"], float)
                     hover_text_partial = self._get_hover_text(
@@ -115,13 +119,16 @@ class ACSAHE:
                         self.progress_bar_messages["Ultimo"],
                         int(step_number / self.total_steps * 100)
                     )
-                    fig, fig_2d_list = self.plotly_engine.build_result_html(
+                    fig, fig_2d_list = self.plotly_engine.result_builder_orchestrator(
                         geometric_solution,
                         self.x_total, self.y_total, self.z_total,
                         self.hover_text_total, self.color_total, self.is_capped_total,
                         self.plotly_data_subsets,
                         self.path_to_exe,
-                        self.input_file_name
+                        self.input_file_name,
+                        self.file_name_no_extension,
+                        self.html_folder_path,
+                        self.excel_folder_path
                     )
                     if self.generate_pdf:
                         interaction_diagram = fig if geometric_solution.problema["tipo"] == "2D" else fig_2d_list
@@ -133,26 +140,18 @@ class ACSAHE:
                             filename=f'{self.input_file_name}',
                         )
                         engine.build_report()
-                        name_no_extension = ".".join(self.input_file_name.split(".")[:-1]) if "." in self.input_file_name else self.input_file_name
-                        engine.save_report(f"{self.pdf_folder_path}/{name_no_extension}.docx")
+                        engine.save_report(f"{self.pdf_folder_path}/{self.file_name_no_extension}.docx")
+                    if self.generate_excel:
+                        pass
 
+                    self.update_ui(f"ACSAHE ha finalizado!", progress_bar_value=100)
+                    QApplication.processEvents()
+            self.geometric_solution.excel_manager.close()
         except Exception as e:
             traceback.print_exc()
+            if hasattr(self, "geometric_solution"):
+                self.geometric_solution.excel_manager.close()
             raise e
-        finally:
-            extra_msg = self.obtener_mensaje_hoja_de_resultados(self.geometric_solution)
-            self.update_ui(f"ACSAHE ha finalizado!{extra_msg}", progress_bar_value=100)
-            QApplication.processEvents()
-
-    @staticmethod
-    def obtener_mensaje_hoja_de_resultados(solucion_geometrica):
-        if solucion_geometrica.problema["tipo"] == "3D" and solucion_geometrica.problema[
-            "resultados_en_wb"] is True:
-            return "\n\nSe ha habilitado la hoja 'Resultados 3D' en la planilla.\n"
-        elif solucion_geometrica.problema["tipo"] == "2D" and solucion_geometrica.problema[
-            "resultados_en_wb"] is True:
-            return "\n\nSe ha habilitado la hoja 'Resultados 2D' en la planilla.\n"
-        return ""
 
     def _update_progress_message(self, step_number, angle):
         progress = int(step_number / self.total_steps * 100)

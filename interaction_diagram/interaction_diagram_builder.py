@@ -19,18 +19,18 @@ def show_message(message, titulo="Mensaje"):
     messagebox.showinfo(titulo, message)
 
 
-class DiagramaInteraccion2D:
+class UniaxialInteractionDiagram:
 
-    def __init__(self, angulo_plano_de_carga, geometric_solution: ACSAHEGeometricSolution):
+    def __init__(self, uniaxial_angle, geometric_solution: ACSAHEGeometricSolution):
         self.geometric_solution = geometric_solution
         self.concrete_element_array = self.get_concrete_element_array()
         self.rebar_array = self.get_rebar_array()
         self.prestressed_reinforcement_array = self.get_prestressed_reinforcement_array()
-        self.angulo_plano_de_carga_esperado = angulo_plano_de_carga
+        self.uniaxial_angle = uniaxial_angle
         self.phi_strength_reduction_factor = geometric_solution.problema["phi_variable"]
         try:
-            self.lista_planos_sin_solucion = []
-            self.interaction_diagram_point_list = self.iterate_solution()
+            self.no_solution_points_list = []
+            self.interaction_diagram_points_list = self.iterate_solution()
             self.review_capped_points()
         except Exception as e:
             traceback.print_exc()
@@ -80,21 +80,21 @@ class DiagramaInteraccion2D:
         try:
             sol = fsolve(
                 self.evaluar_diferencia_para_inc_eje_neutro,
-                x0=-self.angulo_plano_de_carga_esperado,
+                x0=-self.uniaxial_angle,
                 xtol=0.005,  # ~20 seconds.
                 args=plano_de_deformacion,
                 full_output=1,
                 maxfev=50
             )
-            theta, diferencia, success = sol[0][0], sol[1]['fvec'], sol[2] == 1
+            theta, precision, is_success = sol[0][0], sol[1]['fvec'], sol[2] == 1
             theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
-            if success and abs(diferencia) < diferencia_admisible:
-                sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
+            if is_success and abs(precision) < diferencia_admisible:
+                sumF, Mx, My, phi = self.get_solution_for_theta_and_strain_plane(theta, *plano_de_deformacion)
                 return {
                     "sumF": sumF,
-                    "M": self.obtener_momento_resultante(Mx, My),
+                    "M": self.get_resulting_uniaxial_moment(Mx, My),
                     "plano_de_deformacion": plano_de_deformacion,
-                    "color": self.numero_a_color_arcoiris(abs(plano_de_deformacion[3])),
+                    "color": self.transform_number_in_rainbow_color(abs(plano_de_deformacion[3])),
                     "phi": phi,
                     "Mx": Mx,
                     "My": My,
@@ -104,17 +104,17 @@ class DiagramaInteraccion2D:
                 pass
         except Exception as e:
             traceback.print_exc()
-            print(e)
+            raise(e)
 
     def evaluar_diferencia_para_inc_eje_neutro(self, theta, *plano_de_deformacion):
         theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
-        sumF, Mx, My, phi = self.obtener_resultante_para_theta_y_def(theta, *plano_de_deformacion)
+        sumF, Mx, My, phi = self.get_solution_for_theta_and_strain_plane(theta, *plano_de_deformacion)
         ex = round(My / sumF, 5)
         ey = round(Mx / sumF, 5)
         if ex == 0 and ey == 0:  # Carga centrada, siempre "pertenece" al plano de carga.
             return 0
         angulo_momento_con_x = self.obtener_angulo_resultante_momento(Mx, My)
-        angulo_momento_esperado_con_x = 180 - abs(self.angulo_plano_de_carga_esperado)
+        angulo_momento_esperado_con_x = 180 - abs(self.uniaxial_angle)
         if angulo_momento_esperado_con_x >= 180:
             angulo_momento_esperado_con_x = angulo_momento_esperado_con_x - 180  # Para que se encuentre en rango [0, 180]
         diferencia = angulo_momento_con_x - angulo_momento_esperado_con_x  # Apuntamos a que esto sea 0
@@ -123,7 +123,7 @@ class DiagramaInteraccion2D:
         # la función scipy.fsolve se traba cuando obtiene el mismo resultado sucesivas veces, por lo que toma válida
         return diferencia
 
-    def calculo_distancia_eje_neutro_de_elementos(self, theta_rad):
+    def calculo_distancia_eje_neutro_de_elements_list(self, theta_rad):
         sin_theta, cos_theta = self.sincos_cached(theta_rad)
 
         concrete_rotated = self.concrete_element_array.copy()
@@ -144,19 +144,19 @@ class DiagramaInteraccion2D:
         return np.sin(theta_rad), np.cos(theta_rad)
 
     @lru_cache(maxsize=1024)
-    def obtener_resultante_para_theta_y_def(self, theta, *plano_de_deformacion):
-        rot_concrete_array, rot_rebar_array, rot_prestressed_array = self.calculo_distancia_eje_neutro_de_elementos(theta)
+    def get_solution_for_theta_and_strain_plane(self, theta, *plano_de_deformacion):
+        rot_concrete_array, rot_rebar_array, rot_prestressed_array = self.calculo_distancia_eje_neutro_de_elements_list(theta)
         rot_concrete_array.sort(order="neutral_axis_distance")
         rot_rebar_array.sort(order="neutral_axis_distance")
         rot_prestressed_array.sort(order="neutral_axis_distance")
-        ecuacion_plano_deformacion = self.obtener_ecuacion_plano_deformacion(
+        ecuacion_plano_deformacion = self._get_strain_plane_equation(
             rot_concrete_array, rot_rebar_array, rot_prestressed_array, plano_de_deformacion)
-        sumF, Mx, My, phi = self.calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
+        sumF, Mx, My, phi = self.get_section_forces_for_rotated_neutral_axis(
             rot_concrete_array, rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion)
         return sumF, Mx, My, phi
 
     @staticmethod
-    def obtener_momento_resultante(Mx, My):
+    def get_resulting_uniaxial_moment(Mx, My):
         return (1 if Mx >= 0 else -1) * math.sqrt(Mx ** 2 + My ** 2)
 
     @staticmethod
@@ -166,36 +166,36 @@ class DiagramaInteraccion2D:
             return 0
         return angulo_x if angulo_x >= 0 else angulo_x + 180  # Para que se encuentre comprendido en el rango [0, 180]
 
-    def obtener_ecuacion_plano_deformacion(self, rot_concrete_array, rot_rebar_array, rot_prestressed_array,
-                                           plano_de_deformacion):
-        def_1, def_2 = plano_de_deformacion[0], plano_de_deformacion[1]
-        y_positivo = self.obtener_y_determinante_positivo(def_1, rot_rebar_array, rot_prestressed_array,
-                                                          rot_concrete_array)
-        y_negativo = self.obtener_y_determinante_negativo(def_2, rot_rebar_array, rot_prestressed_array,
-                                                          rot_concrete_array)
+    def _get_strain_plane_equation(self, rot_concrete_array, rot_rebar_array, rot_prestressed_array,
+                                   plano_de_deformacion):
+        extreme_strain_y_positive, exteme_strain_y_negative = plano_de_deformacion[0], plano_de_deformacion[1]
+        y_extreme_positive = self._get_extreme_positive_y(
+            extreme_strain_y_positive, rot_rebar_array, rot_prestressed_array, rot_concrete_array)
+        y_extreme_negative = self.get_extreme_negative_y(
+            exteme_strain_y_negative, rot_rebar_array, rot_prestressed_array, rot_concrete_array)
 
-        if y_positivo == y_negativo and def_1 == def_2:
-            return lambda y: def_1
+        if y_extreme_positive == y_extreme_negative and extreme_strain_y_positive == exteme_strain_y_negative:
+            return lambda y: extreme_strain_y_positive
 
-        A = (def_1 - def_2) / (y_positivo - y_negativo)
-        B = def_2 - A * y_negativo
-        return lambda rotated_y: rotated_y * A + B
+        slope = (extreme_strain_y_positive - exteme_strain_y_negative) / (y_extreme_positive - y_extreme_negative)
+        y_intercept = exteme_strain_y_negative - slope * y_extreme_negative
+        return lambda rotated_y: rotated_y * slope + y_intercept  # linear equation on rotated axis.
 
-    def obtener_y_determinante_positivo(self, def_extrema, rebar_array, prestressed_array, concrete_array):
-        if def_extrema <= 0 or def_extrema < self.geometric_solution.deformacion_maxima_de_acero:
+    def _get_extreme_positive_y(self, extreme_strain, rebar_array, prestressed_array, concrete_array):
+        if extreme_strain <= 0 or extreme_strain < self.geometric_solution.deformacion_maxima_de_acero:
             return concrete_array["neutral_axis_distance"][-1]  # Most compressed concrete fiber
 
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
         return np.max(neutral_axis_distances)  # Most distant (traction) steel fiber
 
-    def obtener_y_determinante_negativo(self, extreme_strain, rebar_array, prestressed_array, concrete_array):
+    def get_extreme_negative_y(self, extreme_strain, rebar_array, prestressed_array, concrete_array):
         if extreme_strain <= 0 or extreme_strain < self.geometric_solution.deformacion_maxima_de_acero:
             return concrete_array["neutral_axis_distance"][0]  # Distance to compressed concrete fiber.
 
         neutral_axis_distances = np.concatenate([rebar_array["neutral_axis_distance"], prestressed_array["neutral_axis_distance"]])
         return np.min(neutral_axis_distances)  # Most distant (traction) steel fiber
 
-    def calcular_sumatoria_de_fuerzas_en_base_a_eje_neutro_girado(
+    def get_section_forces_for_rotated_neutral_axis(
             self, rot_concrete_array, rot_rebar_array, rot_prestressed_array, strain_plane_eq):
 
         # -------------------- 1. Compute flexural strain fields --------------------
@@ -208,7 +208,7 @@ class DiagramaInteraccion2D:
         # -------------------- 2. Concrete --------------------
         max_compression_strain = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
         concrete_forces = np.array([
-            self.geometric_solution.hormigon.relacion_constitutiva_simplificada(e, e_max_comp=max_compression_strain) * a
+            self.geometric_solution.hormigon.simplified_stress_strain_eq(e, e_max_comp=max_compression_strain) * a
             for e, a in zip(rot_concrete_array['strain'], rot_concrete_array['area'])
         ])
         sumFH = np.sum(concrete_forces)
@@ -217,7 +217,7 @@ class DiagramaInteraccion2D:
 
         # -------------------- 3. Passive Rebar --------------------
         rebar_forces = np.array([
-            self.geometric_solution.EA[0].relacion_constitutiva(e) * a for e, a in zip(
+            self.geometric_solution.EA[0].stress_strain_eq(e) * a for e, a in zip(
                 rot_rebar_array['strain'],
                 rot_rebar_array['area']
             )
@@ -235,7 +235,7 @@ class DiagramaInteraccion2D:
         )
 
         prestressed_forces = np.array([
-            self.geometric_solution.EAP[0].relacion_constitutiva(e) * a for e, a in zip(
+            self.geometric_solution.EAP[0].stress_strain_eq(e) * a for e, a in zip(
                 rot_prestressed_array['total_strain'],
                 rot_prestressed_array['area']
             )
@@ -246,8 +246,10 @@ class DiagramaInteraccion2D:
 
         # -------------------- 5. Strength Reduction Factor --------------------
 
-        phi = self.get_strength_reduction_factor_2024(
-            rot_rebar_array, rot_prestressed_array, self.geometric_solution.tipo_estribo
+        phi = self.get_strength_reduction_factor(
+            rot_rebar_array=rot_rebar_array,
+            rot_prestressed_array=rot_prestressed_array,
+            transverse_reinf_type=self.geometric_solution.tipo_estribo
         )
 
         # -------------------- 6. Totals --------------------
@@ -267,12 +269,12 @@ class DiagramaInteraccion2D:
         else:
             return 1.0
 
-    def get_strength_reduction_factor_2005(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
+    def get_strength_reduction_factor_2005(self, rot_rebar_array, rot_prestressed_array, transverse_reinf_type):
         # Manual override
         if isinstance(self.phi_strength_reduction_factor, float):
             return self.phi_strength_reduction_factor
 
-        phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.7
+        phi_min = 0.65 if "ZUNCHOS" not in transverse_reinf_type.upper() else 0.70
 
         if len(rot_rebar_array) == 0 and len(rot_prestressed_array) == 0:
             return 0.55  # Plain concrete
@@ -287,7 +289,7 @@ class DiagramaInteraccion2D:
         # Interpolation logic
         if max_strain >= 0.005:
             return 0.9
-        elif max_strain < 0.002:
+        elif max_strain <= 0.002:
             return phi_min
         else:
             return (
@@ -295,12 +297,12 @@ class DiagramaInteraccion2D:
                     0.9 * (max_strain - 0.002) / 0.003
             )
 
-    def get_strength_reduction_factor_2024(self, rot_rebar_array, rot_prestressed_array, tipo_estribo):
+    def get_strength_reduction_factor_2024(self, rot_rebar_array, rot_prestressed_array, transverse_reinf_type):
         # Manual override
         if isinstance(self.phi_strength_reduction_factor, float):
             return self.phi_strength_reduction_factor
 
-        phi_min = 0.65 if tipo_estribo != "Zunchos en espiral" else 0.75
+        phi_min = 0.65 if "ZUNCHOS" not in transverse_reinf_type.upper() else 0.75
         phi_max = 0.90
 
         if len(rot_rebar_array) == 0 and len(rot_prestressed_array) == 0:
@@ -323,18 +325,18 @@ class DiagramaInteraccion2D:
             ety = extreme_tension_rebar["ey"]
         else:
             max_steel_strain = extreme_tension_prestressed_bar["flexural_strain"]
-            ety = 2 / 1000
+            ety = 2/1000
 
         # Interpolation logic
         if max_steel_strain >= ety + 0.003:
             return phi_max
-        elif max_steel_strain < ety:
+        elif max_steel_strain <= ety:
             return phi_min
         else:
             return phi_min + (phi_max-phi_min)/(3/1000)*(max_steel_strain-ety)
 
     @staticmethod
-    def numero_a_color_arcoiris(numero):
+    def transform_number_in_rainbow_color(numero):
         if numero < 0 or numero > 350:
             raise ValueError("El número debe estar entre 0 y 350")
 
@@ -387,10 +389,10 @@ class DiagramaInteraccion2D:
 
     def review_capped_points(self):
         compression_force_limit = self._get_maximum_compression_value()
-        solution_copy = self.interaction_diagram_point_list.copy()
+        solution_copy = self.interaction_diagram_points_list.copy()
         for index, interaction_diagram_point in enumerate(solution_copy):
             if -interaction_diagram_point["sumF"]/interaction_diagram_point["phi"] > compression_force_limit:
-                copy_point = copy.deepcopy(self.interaction_diagram_point_list[index])
+                copy_point = copy.deepcopy(self.interaction_diagram_points_list[index])
                 copy_point["sumF"] = -compression_force_limit*copy_point["phi"]
-                self.interaction_diagram_point_list.append(copy_point)
-                self.interaction_diagram_point_list[index]["is_capped"] = True  # Overwriting original point.
+                self.interaction_diagram_points_list.append(copy_point)
+                self.interaction_diagram_points_list[index]["is_capped"] = True  # Overwriting original point.

@@ -6,32 +6,32 @@ class Hormigon:
         self.E = 470 * (int(tipo)**0.5)  # kN/cm²
         self.B1 = self.obtener_beta_1()
 
-    def relacion_constitutiva_simplificada(self, e, e_max_comp):
+    def simplified_stress_strain_eq(self, e, e_max_comp):
         """
-        Obtiene la tensión (en kN/cm²) utilizando las hipótesis planteadas en el apartado 10.2 del CIRSOC 201 (2005).
-        Se recuerda que las deformaciones negativas corresponden a una fibra comprimida.
+        Returns the stress (in kN/cm²) based on the assumptions established in Section 10.2 of CIRSOC 201 (2005).
+        Note that negative strains correspond to compressed fibers.
 
-        Variables:
-        :param e: deformación de la fibra a analizarse.
-        :param e_max_comp: deformación de la fibra más comprimida de la sección.
+        Parameters:
+        :param e: strain of the fiber being analyzed.
+        :param e_max_comp: strain of the most compressed fiber in the section.
         """
         e_lim = (1 - self.B1) * e_max_comp  # Deformación a partir de la cual estamos fuera del bloque de tensiones.
-        if e > e_lim:  # = e menos comprimido que e_lim (recordar signo).
+        if e > e_lim:  # = e menos comprimido que e_lim (recordar sign).
             return 0
         else:
             return -0.85*self.fc/10  # kN/cm²
 
-    def relacion_constitutiva_elastica(self, e):
+    def elastic_stress_strain_eq(self, e):
         """
-        Obtiene la tensión (en kN/cm²) suponiendo un comportamiento puramente elástico del hormigón (ley de Hooke).
-        No se considera la contribución a la tracción del hormigón para esta relación.
+        Returns the stress (in kN/cm²) assuming purely elastic behavior of the concrete (Hooke's law).
+        The tensile contribution of the concrete is not considered in this relation.
         """
         return self.E*e if e < 0 else 0  # kN/cm²
 
     def obtener_beta_1(self):
         """
-        Obtiene el valor de ß1, el cual determina la relación entre la profundidad del eje neutro y la del bloque
-        de tensiones. Refiérase al apartado 10.2.7.3 del CIRSOC 201 (2005).
+        Returns the value of ß1, which defines the relationship between the depth of the neutral axis
+        and that of the stress block. Refer to Section 10.2.7.3 of CIRSOC 201 (2005).
         :return:
         """
         if self.fc > 30:

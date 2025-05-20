@@ -1,3 +1,4 @@
+import os
 import plotly.graph_objects as go
 import numpy as np
 import base64
@@ -5,9 +6,11 @@ import math
 import tempfile
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
+from tkinter import messagebox
 
 from plot.html.html_engine import ACSAHEHtmlEngine
+from build.utils.excel_manager import ExcelManager, create_workbook_from_template
 
 
 class ACSAHEPlotlyEngine(object):
@@ -28,12 +31,12 @@ class ACSAHEPlotlyEngine(object):
         )
         return fig
 
-    def plot_positive_polygon(self, elemento, color, espesor, transparencia, negative_shapes_list=None):
+    def plot_positive_polygon(self, element, color, espesor, transparencia, negative_shapes_list=None):
         negative_shapes_list = [] if negative_shapes_list is None else negative_shapes_list
         negative_polygons_list = [shape for shape in negative_shapes_list if shape.tipo != "Circular"]
         x_border_segment_list = []
         y_border_segment_list = []
-        for unsplit_segment in elemento.segmentos_borde:
+        for unsplit_segment in element.boundary_segments_list:
             split_segment_list = self._split_segment_in_negative_polygons(unsplit_segment, negative_polygons_list)
             for segment in split_segment_list:
                 x_border_segment_list.append([segment.start_node.x, segment.end_node.x])
@@ -50,14 +53,15 @@ class ACSAHEPlotlyEngine(object):
                     color=color,
                 )))
 
-    def plot_negative_polygon(self, elemento, color, espesor, transparencia, positive_polygons_list, negative_polygons_list):
+    def plot_negative_polygon(
+            self, element, color, espesor, transparencia, positive_polygons_list, negative_polygons_list):
 
         uncleaned_segment_list = []
 
         other_negative_polygons = negative_polygons_list.copy()
-        other_negative_polygons.remove(elemento)
+        other_negative_polygons.remove(element)
 
-        for segment in elemento.segmentos_borde:
+        for segment in element.boundary_segments_list:
             if self._is_segment_in_positive_polygons(segment, positive_polygons_list):
                 uncleaned_segment_list.append(segment)  # Before cleaning
 
@@ -86,12 +90,13 @@ class ACSAHEPlotlyEngine(object):
                     color=color,
                 )))
 
-    def _split_segment_in_negative_polygons(self, segment_to_split, negative_polygons_list):
+    @staticmethod
+    def _split_segment_in_negative_polygons(segment_to_split, negative_polygons_list):
         segment_split_list = []
         if not negative_polygons_list:
             return [segment_to_split]
         for negative_polygon in negative_polygons_list:
-            for negative_segment in negative_polygon.segmentos_borde:
+            for negative_segment in negative_polygon.boundary_segments_list:
                 if len(segment_split_list) == 0:
                     segment_split_list = [segment_to_split]
                 segment_split_list_temp = segment_split_list.copy()  # Shallow copy, same objects.
@@ -106,47 +111,50 @@ class ACSAHEPlotlyEngine(object):
                             segment_split_list.extend(substract_result)
         return segment_split_list
 
-    def _is_segment_in_positive_polygons(self, segment, positive_polygons_list) -> bool:
+    @staticmethod
+    def _is_segment_in_positive_polygons(segment, positive_polygons_list) -> bool:
         for positive_polygon in positive_polygons_list:
-            if any(positive_polygon.determinar_si_nodo_pertence_a_contorno_sin_bordes(node) for node in[segment.start_node, segment.end_node]):
+            if any(positive_polygon.is_node_inside_borderless_boundaries(node) for node in
+                   [segment.start_node, segment.end_node]):
                 return True
         return False
 
     def plot_cross_section(self, seccion, lista_de_angulos_plano_de_carga):
         color = "Grey"
-        for contorno in seccion.contornos_positivos:
-            if contorno.tipo == "Poligonal":
-                self.plot_positive_polygon(contorno, color=color, transparencia=1, espesor=3, negative_shapes_list=seccion.contornos_negativos)
+        for region in seccion.solid_regions_list:
+            if region.tipo == "Poligonal":
+                self.plot_positive_polygon(region, color=color, transparencia=1, espesor=3,
+                                           negative_shapes_list=seccion.void_regions_list)
             else:
-                self.plot_annular_sector(contorno,
+                self.plot_annular_sector(region,
                                          arc_division=150,
                                          color=color, transparency=1, thickness=4)
 
-        for contorno in seccion.contornos_negativos:
-            if contorno.tipo == "Poligonal":
+        for region in seccion.void_regions_list:
+            if region.tipo == "Poligonal":
                 self.plot_negative_polygon(
-                    contorno, color=color, transparencia=1, espesor=4,
-                    positive_polygons_list=seccion.contornos_positivos,
-                    negative_polygons_list=seccion.contornos_negativos)
+                    region, color=color, transparencia=1, espesor=4,
+                    positive_polygons_list=seccion.solid_regions_list,
+                    negative_polygons_list=seccion.void_regions_list)
             else:
-                self.plot_annular_sector(contorno,
+                self.plot_annular_sector(region,
                                          arc_division=150,
                                          color=color, transparency=1, thickness=4)
 
         x_centroide = []
         y_centroide = []
-        for elemento in seccion.elementos:
-            if elemento.tipo == "Poligonal":
-                self.plot_positive_polygon(elemento, color=color, transparencia=0.2, espesor=1)
+        for element in seccion.elements_list:
+            if element.tipo == "Poligonal":
+                self.plot_positive_polygon(element, color=color, transparencia=0.2, espesor=1)
             else:
-                self.plot_annular_sector(elemento,
+                self.plot_annular_sector(element,
                                          arc_division=100,
                                          color=color,
                                          transparency=0.2,
                                          thickness=1)
 
-            x_centroide.append(elemento.xg)
-            y_centroide.append(elemento.yg)
+            x_centroide.append(element.xg)
+            y_centroide.append(element.yg)
 
         self.fig.add_trace(
             go.Scatter(
@@ -256,7 +264,7 @@ class ACSAHEPlotlyEngine(object):
                 x1=barra.xg + radio, y1=barra.yg + radio,
                 fillcolor=self.reinforcement_colour_per_string(acero_y_diamtro_string),
                 line_color=self.reinforcement_colour_per_string(acero_y_diamtro_string),
-                legendgroup=f"group{1 if tipo=='ACERO PASIVO' else 2}",
+                legendgroup=f"group{1 if tipo == 'ACERO PASIVO' else 2}",
                 legendgrouptitle_text=tipo,
                 name=acero_y_diamtro_string,
                 showlegend=acero_y_diamtro_string not in lista_de_diametros
@@ -283,60 +291,62 @@ class ACSAHEPlotlyEngine(object):
         ))
 
     @staticmethod
-    def plotly_arc(xc, yc, radio, angulo_inicial, angulo_final, arc_division=50, color="Cyan", espesor=1, transparencia=1.00):
-        theta = np.linspace(np.radians(angulo_inicial), np.radians(angulo_final), arc_division)
-        x = xc + radio * np.cos(theta)
-        y = yc + radio * np.sin(theta)
+    def plotly_arc(
+            xc, yc, radius, start_angle, final_angle, arc_division=50, color="Cyan", thickness=1, opacity=1.00):
+        theta = np.linspace(np.radians(start_angle), np.radians(final_angle), arc_division)
+        x = xc + radius * np.cos(theta)
+        y = yc + radius * np.sin(theta)
 
         return go.Scatter(x=x, y=y, mode='lines',
-                          line=dict(color=color, width=espesor, dash='solid'),
+                          line=dict(color=color, width=thickness, dash='solid'),
                           hoverinfo='skip',
                           showlegend=False,
-                          opacity=transparencia)
+                          opacity=opacity)
 
     @staticmethod
-    def plotly_segmento(nodo1, nodo2, color, espesor=2, transparencia=0.9, **kwargs):
-        x = [nodo1.x, nodo2.x]
-        y = [nodo1.y, nodo2.y]
+    def plotly_segment(start_node, end_node, color, thickness=2, opacity=0.9, **kwargs):
+        x = [start_node.x, end_node.x]
+        y = [start_node.y, end_node.y]
 
-        return go.Scatter(x=x, y=y, mode='lines', line=dict(color=color, width=espesor, dash='solid'),
+        return go.Scatter(x=x, y=y, mode='lines', line=dict(color=color, width=thickness, dash='solid'),
                           hoverinfo='skip',
-                          opacity=transparencia,
+                          opacity=opacity,
                           **kwargs)
 
     def plot_annular_sector(
-            self, annular_sector, arc_division=100, color="Cyan", thickness=None, show_centroid=False, transparency=1.00):
+            self, annular_sector, arc_division=100, color="Cyan", thickness=None, show_centroid=False,
+            transparency=1.00):
         self.fig.add_trace(
             self.plotly_arc(annular_sector.xc,
                             annular_sector.yc,
-                            annular_sector.radio_externo,
-                            annular_sector.angulo_inicial,
-                            annular_sector.angulo_final,
+                            annular_sector.external_radius,
+                            annular_sector.start_angle,
+                            annular_sector.end_angle,
                             arc_division,
                             color,
                             thickness,
                             transparency))
 
         # Plotear el arco interno (si hay)
-        if annular_sector.radio_interno > 0:
+        if annular_sector.internal_radius > 0:
             self.fig.add_trace(
                 self.plotly_arc(annular_sector.xc,
                                 annular_sector.yc,
-                                annular_sector.radio_interno,
-                                annular_sector.angulo_inicial,
-                                annular_sector.angulo_final,
+                                annular_sector.internal_radius,
+                                annular_sector.start_angle,
+                                annular_sector.end_angle,
                                 arc_division,
                                 color,
                                 thickness,
                                 transparency))
 
         # Segmentos rectos
-        if annular_sector.segmentos_rectos is not None:
-            for segmento in annular_sector.segmentos_rectos:
-                self.fig.add_trace(self.plotly_segmento(
+        if annular_sector.boundary_straight_segments_list is not None:
+            for segmento in annular_sector.boundary_straight_segments_list:
+                self.fig.add_trace(self.plotly_segment(
                     segmento.start_node, segmento.end_node, color, thickness, transparency, showlegend=False))
 
-        # Centroide de los elementos
+        # Centroide de los elements_list
         if show_centroid:
             self.fig.add_trace(
                 go.Scatter(x=[annular_sector.xg], y=[annular_sector.yg], mode='markers',
@@ -345,7 +355,7 @@ class ACSAHEPlotlyEngine(object):
 
         self.fig.update_layout(showlegend=True)
 
-    def build_result_html(
+    def result_builder_orchestrator(
             self,
             geometric_solution: Any,
             x_list: list,
@@ -355,41 +365,144 @@ class ACSAHEPlotlyEngine(object):
             color_list: list,
             is_capped_list: list,
             data_subsets: Dict,
-            project_path: str,
-            file_name: str
+            path_to_exe: str,
+            excel_result_path: str,
+            base_file_name_no_extension: str,
+            html_folder_path: Any,
+            excel_folder_path: Any
     ):
         """
-        Orchestrates the HTML result generation and opens it in the browser.
+        Orchestrates the result generation and opens HTML it in the browser.
         """
-        fig_interactive, fig_2d_list = self._render_fig(geometric_solution, x_list, y_list, z_list, hover_text_list, color_list, is_capped_list, data_subsets)
-        static_assets = self._load_static_assets(Path(project_path))
-        context = self._build_html_context(fig_interactive, geometric_solution, static_assets, project_path, file_name)
+        path_not_available_msg = ("Usted ha seleccionado la opción {opt},"
+                                  " pero la ruta a la carpeta que ha seleccionado no es válida."
+                                  " Por favor, revise la configuración")
+
+        fig_interactive, args_2d_list, fig_2d_list = self._render_fig(
+            geometric_solution, x_list, y_list, z_list, hover_text_list, color_list, is_capped_list, data_subsets)
+
+        static_assets = self._load_static_assets(Path(path_to_exe))
+        context = self._build_context(fig_interactive, geometric_solution, static_assets, path_to_exe,
+                                      excel_result_path)
         html_path = self._write_temp_html_file(static_assets["template"], context)
         webbrowser.open(f"file://{html_path}")
+        if html_folder_path:
+            if not os.path.exists(html_folder_path):
+                messagebox.showinfo("Error", path_not_available_msg.format(opt="de guardar su resultado .html"))
+            saved_path = self._save_file_with_increment(html_path, html_folder_path, base_file_name_no_extension,
+                                                        ext="html")
+        if excel_folder_path:
+            if not os.path.exists(excel_folder_path):
+                messagebox.showinfo("Error", path_not_available_msg.format(opt="de guardar su resultado Excel"))
+            excel_result_path = self._get_file_name_with_increment(excel_folder_path, base_file_name_no_extension,
+                                                                   ext="xlsx")
+            template_path = context["excel_result_template"]
+            excel_path = self._save_sheets_with_names(args_2d_list, excel_result_path, template_path)
         return fig_interactive, fig_2d_list
+
+    def _save_sheets_with_names(self, args_2d_list, output_path, template_path):
+        create_workbook_from_template(template_path=template_path, target_path=output_path,
+                                      sheet_name=f"λ={args_2d_list[0]['lambda_angle']}°")
+
+        all_sheet_names = []
+        all_columns = []
+        all_data_lists = []
+
+        for args_2d in args_2d_list:
+            lambda_angle = args_2d["lambda_angle"]
+            sheet_name = f"λ={lambda_angle}°"
+            all_sheet_names.append(sheet_name)
+
+            all_columns.append(["I", "J", "K", "N", "O"])
+            all_data_lists.append([
+                args_2d["x_total_list"],
+                args_2d["y_total_list"],
+                args_2d["phi_total_list"],
+                args_2d["x_to_verify"],
+                args_2d["y_to_verify"],
+            ])
+
+        manager = ExcelManager(output_path, read_only=False, visible=False)
+        manager.insert_data_into_multiple_sheets(
+            sheet_names=all_sheet_names,
+            columns_per_sheet=all_columns,
+            data_per_sheet=all_data_lists,
+            start_row=3,
+            single_value_modifications=("G1", [x["lambda_angle"] for x in args_2d_list])
+        )
+        manager.close()
+
+    def _get_file_name_with_increment(self, destination_folder: str, base_file_name: str, ext):
+        """
+        Gets the correct filename in the destination folder, avoiding overwrites by adding _1, _2, etc., if needed.
+
+        :param destination_folder: Folder where the HTML should be saved.
+        :param base_file_name: Desired base name for the HTML file (without extension).
+        :param ext: File extension.
+        :return: Path where the HTML was saved.
+        """
+        destination_folder = Path(destination_folder)
+        destination_folder.mkdir(parents=True, exist_ok=True)
+
+        appended_extension = '.' + str(ext) if ext else ''
+
+        target_path = destination_folder / f"{base_file_name}{appended_extension}"
+        counter = 1
+
+        while target_path.exists():
+            target_path = destination_folder / f"{base_file_name}_{counter}{appended_extension}"
+            counter += 1
+        return target_path
+
+    def _save_file_with_increment(self, file_source_path: str, destination_folder: str, base_file_name: str,
+                                  ext) -> Path:
+        """
+        Saves the file to the destination folder, avoiding overwrites by adding _1, _2, etc., if needed.
+
+        :param file_source_path: Path to the source file.
+        :param destination_folder: Folder where the HTML should be saved.
+        :param base_file_name: Desired base name for the HTML file (without extension).
+        :param ext: File extension.
+        :return: Path where the HTML was saved.
+        """
+        target_path = self._get_file_name_with_increment(destination_folder, base_file_name, ext)
+
+        with open(file_source_path, 'r', encoding='utf-8') as src_file:
+            content = src_file.read()
+
+        with open(target_path, 'w', encoding='utf-8') as dest_file:
+            dest_file.write(content)
+
+        return target_path
 
     def _render_fig(self, gs, x, y, z, text, color, is_capped, data_subsets):
         tipo = gs.problema["tipo"]
-        resultados_en_wb = gs.problema.get("resultados_en_wb", False)
 
         if tipo == "2D":
-            fig = self.print_2d(gs, x, y, z, text, color, is_capped, data_subsets)
-            if resultados_en_wb:
-                gs.insertar_valores_2D(data_subsets, gs.problema.get("puntos_a_verificar"))
-            fig.update_layout(autosize=True)
-            return fig, None
+            arguments_2d_list = [self._get_2d_args(subset_data, lambda_angle, gs) for lambda_angle, subset_data in
+                                 data_subsets.items()]
+            fig_2d = self.plot_2d(**arguments_2d_list[0])
+            fig_2d.update_layout(autosize=True)
+            return fig_2d, arguments_2d_list, [fig_2d]
         else:
-            fig = self.print_3d(gs, x, y, z, text, color, is_capped, data_subsets)
-            if resultados_en_wb:
-                gs.insertar_valores_3D(data_subsets)
-            fig.update_layout(autosize=True)
-            return fig, [self.print_2d(gs, **self._2d_arguments(subset_data, lambda_angle)) for lambda_angle, subset_data in data_subsets.items()]
+            fig_3d = self.plot_3d(gs, x, y, z, text, color, is_capped, data_subsets)
+            fig_3d.update_layout(autosize=True)
+            arguments_2d_list = [self._get_2d_args(subset_data, lambda_angle, gs) for lambda_angle, subset_data in
+                                 data_subsets.items()]
+            figs_2d_list = [self.plot_2d(**args_2d) for args_2d in arguments_2d_list]
+            return fig_3d, arguments_2d_list, figs_2d_list
 
-    def _2d_arguments(self, subset_data, lambda_angle):
-        return dict(lista_x_total=subset_data["x"], lista_y_total=subset_data["y"], lista_z_total=subset_data["z"],
-                    lista_text_total=subset_data["text"], lista_color_total=subset_data["color"],
+    def _get_2d_args(self, subset_data, lambda_angle, geometric_solution):
+        x_total_list = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for
+                        x, y
+                        in
+                        zip(subset_data["x"], subset_data["y"])]
+        x_to_verify, y_to_verify, comb_id_to_verify = self._get_load_combinations_data(geometric_solution, lambda_angle)
+        return dict(x_total_list=x_total_list, y_total_list=subset_data["z"], phi_total_list=subset_data["phi"],
+                    text_total_list=subset_data["text"], color_total_list=subset_data["color"],
                     is_capped_list=subset_data["is_capped"], data_subsets={lambda_angle: subset_data},
-                    lambda_angle_3d_only=lambda_angle)
+                    x_to_verify=x_to_verify, y_to_verify=y_to_verify, comb_id_to_verify=comb_id_to_verify,
+                    lambda_angle=lambda_angle)
 
     def _load_static_assets(self, project_path: Path) -> Dict[str, Any]:
         html_dir = project_path / "build" / "html"
@@ -404,7 +517,7 @@ class ACSAHEPlotlyEngine(object):
             "encoded_icon": self._read_binary_file(icon_path)
         }
 
-    def _build_html_context(self, fig, gs, assets: Dict[str, str], project_path: str, file_name: str) -> Dict[str, str]:
+    def _build_context(self, fig, gs, assets: Dict[str, str], project_path: str, file_name: str) -> Dict[str, str]:
         html_engine = ACSAHEHtmlEngine(project_path)
         self.section_fig = gs.construir_grafica_seccion_plotly()
         return {
@@ -424,7 +537,8 @@ class ACSAHEPlotlyEngine(object):
                 include_plotlyjs='cdn',
                 config=self.get_fig_html_config(f"ACSAHE - Resultado {gs.problema['tipo']}")
             ),
-            "foto_logo": f"{project_path}/build/images/LOGO%20ACSAHE.webp"
+            "foto_logo": f"{project_path}/build/images/LOGO%20ACSAHE.webp",
+            "excel_result_template": f"{project_path}/build/EXCEL result template.xlsx"
         }
 
     def _write_temp_html_file(self, template: str, context: Dict[str, str]) -> str:
@@ -461,14 +575,14 @@ class ACSAHEPlotlyEngine(object):
             **kwargs
         ))
 
-    def print_3d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
-                 lista_color_total, is_capped_list, data_subsets):
+    def plot_3d(self, geometric_solution, x_total_list, y_total_list, z_total_list, text_total_list,
+                color_total_list, is_capped_list, data_subsets):
 
-        plano_de_carga_lista = set(x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"])
+        plano_de_carga_lista = set(x["plano_de_carga"] for x in geometric_solution.problema["puntos_a_verificar"])
         plano_de_carga_lista = list(plano_de_carga_lista)
         plano_de_carga_lista.sort()
         estados_subsets = {}
-        for punto_a_verificar in solucion_geometrica.problema["puntos_a_verificar"]:
+        for punto_a_verificar in geometric_solution.problema["puntos_a_verificar"]:
             plano_de_carga = str(round(float(punto_a_verificar["plano_de_carga"]), 2))
             if plano_de_carga not in estados_subsets:  # Inicialización
                 estados_subsets[plano_de_carga] = {"x": [], "y": [], "z": [], "nombre": []}
@@ -477,13 +591,13 @@ class ACSAHEPlotlyEngine(object):
             estados_subsets[plano_de_carga]["z"].append(punto_a_verificar["P"])
             estados_subsets[plano_de_carga]["nombre"].append(punto_a_verificar["nombre"])
 
-        X = [x["Mx"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-        Y = [x["My"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+        X = [x["Mx"] for x in geometric_solution.problema["puntos_a_verificar"]]
+        Y = [x["My"] for x in geometric_solution.problema["puntos_a_verificar"]]
         Z = [x["P"] for x in
-             solucion_geometrica.problema["puntos_a_verificar"]]  # Positivo para transformar a compresión positiva
-        NOMBRE = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+             geometric_solution.problema["puntos_a_verificar"]]  # Positivo para transformar a compresión positiva
+        NOMBRE = [x["nombre"] for x in geometric_solution.problema["puntos_a_verificar"]]
 
-        plano_de_carga_lista = [x["plano_de_carga"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+        plano_de_carga_lista = [x["plano_de_carga"] for x in geometric_solution.problema["puntos_a_verificar"]]
         plano_de_carga_lista.sort()
 
         fig = go.Figure(layout_template="plotly_white")
@@ -492,39 +606,51 @@ class ACSAHEPlotlyEngine(object):
         for trace in result["traces"]:
             fig.add_trace(trace)
 
-
-        rango_min = min(min(lista_x_total + X), min(lista_y_total + Y))
-        rango_max = max(max(lista_x_total + X), max(lista_y_total + Y))
+        rango_min = min(min(x_total_list + X), min(y_total_list + Y))
+        rango_max = max(max(x_total_list + X), max(y_total_list + Y))
 
         # self.agregar_punto_estado(fig, X, Y, Z, NOMBRE)
 
+        gridline_conf = dict(linecolor="Black",
+                             showline=True,
+                             linewidth=2,
+                             title=dict(
+                                 font=dict(
+                                     family="Times New Roman",
+                                     size=16,
+                                     color="black"
+                                 )
+                             ),
+                             tickfont=dict(
+                                 color="Black",
+                                 family='Times New Roman',
+                                 size=14),
+                             gridcolor="rgba(0, 0, 0, 0.3)",  # Light grey
+                             gridwidth=2
+                             )
+
         fig.update_layout(
             title=dict(
-                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción 3D</span></span>',
+                text=f'<span style="font-size: 30px;">Diagrama de interacción 3D</span></span>',
                 x=0.5,
-                font=dict(color="rgb(142, 180, 227)",
+                font=dict(color="rgba(21,82,171,0.90)",
                           family='Times New Roman')),
             scene=dict(
-                xaxis_title='ϕMnx [kNm]',
-                yaxis_title='ϕMny [kNm]',
-                zaxis_title='ϕPn [kN]',
+                xaxis_title='<b>ϕMnx [kNm]</b>',
+                yaxis_title='<b>ϕMny [kNm]</b>',
+                zaxis_title='<b>ϕPn [kN]</b>',
                 xaxis=dict(
-                    linecolor="Grey",
-                    showline=True,
-                    title_font=dict(family='Times New Roman', size=16),
-                    range=[rango_min, rango_max]
+                    range=[rango_min, rango_max],
+                    **gridline_conf
                 ),
                 yaxis=dict(
-                    linecolor="Grey",
-                    showline=True,
-                    title_font=dict(family='Times New Roman', size=16),
-                    range=[rango_min, rango_max]
+                    range=[rango_min, rango_max],
+                    **gridline_conf
                 ),
                 zaxis=dict(
-                    linecolor="Grey",
-                    showline=True,
-                    title_font=dict(family='Times New Roman', size=16),
-                    range=[min(lista_z_total + Z), max(lista_z_total + Z)]),
+                    range=[min(z_total_list + Z), max(z_total_list + Z)],
+                    **gridline_conf
+                ),
                 aspectmode='manual',  # Set aspect ratio manually
                 aspectratio=dict(x=1, y=1, z=1),
             ))
@@ -536,12 +662,24 @@ class ACSAHEPlotlyEngine(object):
                 buttons=result["buttons"],
                 x=0.02,
                 y=0.98,
-                xanchor='left',
+                xanchor='right',
                 yanchor='top',
                 bgcolor='rgba(240,240,240,0.7)',
-                bordercolor='gray',
-                borderwidth=1
+                bordercolor='Grey',
+                borderwidth=1,
+                font=dict(
+                    family="Times New Roman",
+                    size=16,
+                    color="black"
+                )
+
             )]
+        )
+
+        fig.update_layout(
+            scene_camera=dict(
+                eye=dict(x=1.4, y=1.4, z=1.2)  # zooms out by moving the camera back
+            )
         )
 
         return fig
@@ -601,7 +739,8 @@ class ACSAHEPlotlyEngine(object):
                 filtered_x.append(x[i])
                 filtered_y.append(y[i])
                 filtered_z.append(z[i])
-                filtered_color.append(color[i] if capped is False else "Grey")
+                # filtered_color.append(color[i] if capped is False else "Grey")
+                filtered_color.append("rgba(21,82,171,0.90)" if capped is False else "Grey")
                 filtered_text.append(text[i])
 
         return go.Scatter3d(
@@ -612,10 +751,10 @@ class ACSAHEPlotlyEngine(object):
             marker=dict(size=2, color=filtered_color),
             text=filtered_text,
             hoverinfo='text',
-            name='Contorno diagrama de interacción',
+            name='Region diagrama de interacción',
             visible=True,
             showlegend=False,
-            opacity=0.10 if capped else 1
+            opacity=0.50 if capped else 1
         )
 
     def _build_verify_trace(self, estado_subset):
@@ -624,7 +763,7 @@ class ACSAHEPlotlyEngine(object):
             y=estado_subset["y"],
             z=estado_subset["z"],
             mode='markers',
-            marker=dict(size=4, color="black", symbol='diamond-open'),
+            marker=dict(size=6, color="Crimson", symbol='diamond-open'),
             text=self.hover_text_estados(
                 estado_subset["x"], estado_subset["y"], estado_subset["z"], estado_subset["nombre"]
             ),
@@ -636,7 +775,7 @@ class ACSAHEPlotlyEngine(object):
 
     def _build_show_all_button(self, total_traces):
         return dict(
-            label="Mostrar todos",
+            label="<b>Mostrar todos</b>",
             method="update",
             args=[{"visible": [True] * total_traces}]
         )
@@ -647,86 +786,111 @@ class ACSAHEPlotlyEngine(object):
             visible[idx] = True
 
         return dict(
-            label=f"λ={lambda_angle}º",
+            label=f"<b>λ={lambda_angle}º</b>",
             method="update",
             args=[{"visible": visible}]
         )
 
-    def print_2d(self, solucion_geometrica, lista_x_total, lista_y_total, lista_z_total, lista_text_total,
-                 lista_color_total, is_capped_list,
-                 data_subsets, lambda_angle_3d_only=None):
-        fig = go.Figure(layout_template="plotly_white")
-        lista_x_total = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for
-                         x, y
-                         in
-                         zip(lista_x_total, lista_y_total)]
-
-        if solucion_geometrica.problema["tipo"] == "3D":  # Plotting 2D in report
-            # if planod_de_carga is an int, it is because Mx=My=0 and there are infinite planoes_de_carga
-            X = [(1 if x["Mx"] >= 0 else -1) * math.sqrt(x["Mx"] ** 2 + x["My"] ** 2) for x in solucion_geometrica.problema["puntos_a_verificar"] if isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
-            Y = [x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"] if isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
+    @staticmethod
+    def _get_load_combinations_data(geometric_solution, lambda_angle_3d_only):
+        if geometric_solution.problema["tipo"] == "3D":  # Plotting 2D in report
+            # if planos_de_carga is an int, it is because Mx=My=0 and there are infinite planos_de_carga
+            x_to_verify = [(1 if x["Mx"] >= 0 else -1) * math.sqrt(x["Mx"] ** 2 + x["My"] ** 2) for x in
+                           geometric_solution.problema["puntos_a_verificar"] if
+                           isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
+            y_to_verify = [x["P"] for x in geometric_solution.problema["puntos_a_verificar"] if
+                           isinstance(x["plano_de_carga"], int) or x["plano_de_carga"] == float(lambda_angle_3d_only)]
         else:
-            X = [x["M"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-            Y = [x["P"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
+            x_to_verify = [x["M"] for x in geometric_solution.problema["puntos_a_verificar"]]
+            y_to_verify = [x["P"] for x in geometric_solution.problema["puntos_a_verificar"]]
 
-        nombre = [x["nombre"] for x in solucion_geometrica.problema["puntos_a_verificar"]]
-        text_estados_2d = self.hover_text_estados_2d(X, Y, nombre)
+        comb_id_to_verify = [x["nombre"] for x in geometric_solution.problema["puntos_a_verificar"]]
+        return x_to_verify, y_to_verify, comb_id_to_verify
 
-        opacity_lambda = lambda bool: 0.07 if bool is True else 1.00
-        modified_color_list = lista_color_total.copy()
-        for i, color in enumerate(lista_color_total):
+    def plot_2d(self, x_total_list, y_total_list, text_total_list,
+                color_total_list, is_capped_list,
+                data_subsets, x_to_verify, y_to_verify, comb_id_to_verify, **kwargs):
+        fig = go.Figure(layout_template="plotly_white")
+
+        points_color = "rgb(21,82,171)"
+
+        text_estados_2d = self.hover_text_estados_2d(x_to_verify, y_to_verify, comb_id_to_verify)
+
+        opacity_lambda = lambda bool: 0.70 if bool is True else 1.00
+        modified_color_list = color_total_list.copy()
+        for i, color in enumerate(color_total_list):
             if is_capped_list[i]:
                 modified_color_list[i] = "Grey"
+            else:
+                modified_color_list[i] = points_color
 
         fig.add_trace(go.Scatter(
-            x=lista_x_total,
-            y=lista_z_total,
+            x=x_total_list,
+            y=y_total_list,
             mode='markers',
             marker=dict(size=4, color=modified_color_list, opacity=[opacity_lambda(x) for x in is_capped_list]),
-            text=lista_text_total,
+            text=text_total_list,
             hoverinfo='text',
-            name='Contorno diagrama de interacción',
+            name='Region diagrama de interacción',
             visible=True,
         ))
 
         fig.add_trace(go.Scatter(
-            x=X,
-            y=Y,
+            x=x_to_verify,
+            y=y_to_verify,
             mode='markers',
             marker=dict(size=14,
-                        color='black',
-                        symbol='diamond-open'),
+                        color="Crimson",
+                        symbol='diamond'),
             text=text_estados_2d,
             hoverinfo='text',
             name='Estados a verificar',
             visible=True,
         ))
 
-        rango_min_x = min(lista_x_total + X) * 1.2
-        rango_max_x = max(lista_x_total + X) * 1.2
-        rango_min_y = min(lista_z_total + Y) * 1.1
-        rango_max_y = max(lista_z_total + Y) * 1.2
+        rango_min_x = min(x_total_list + x_to_verify) * 1.2
+        rango_max_x = max(x_total_list + x_to_verify) * 1.2
+        rango_min_y = min(y_total_list + y_to_verify) * 1.2
+        rango_max_y = max(y_total_list + y_to_verify) * 1.2
 
         # Custom axis lines
-        fig.add_shape(type="line", x0=rango_min_x, y0=0, x1=rango_max_x, y1=0, line=dict(color="grey", width=1))
-        fig.add_shape(type="line", x0=0, y0=rango_min_y, x1=0, y1=rango_max_y, line=dict(color="grey", width=1))
+        fig.add_shape(type="line", x0=rango_min_x, y0=0, x1=rango_max_x, y1=0, line=dict(color="black", width=2))
+        fig.add_shape(type="line", x0=0, y0=rango_min_y, x1=0, y1=rango_max_y, line=dict(color="black", width=2))
 
-        fig.update_xaxes(title_text="ϕMnλ [kNm]",
+        fig.update_xaxes(title_text="<b>ϕMnλ [kNm]</b>",
                          title_font=dict(
                              family="Times New Roman",
-                             size=16))
-        fig.update_yaxes(title_text="ϕPn [kN]",
+                             size=25),
+                         color="Black",
+                         gridwidth=1,
+                         gridcolor="rgba(0, 0, 0, 0.3)",
+                         tickfont=dict(
+                             family="Times New Roman",
+                             size=25,
+                             color="Black"
+                         )
+                         )
+        fig.update_yaxes(title_text="<b>ϕPn [kN]</b>",
                          title_font=dict(
                              family="Times New Roman",
-                             size=16))
+                             size=25),
+                         gridwidth=1,
+                         gridcolor="rgba(0, 0, 0, 0.3)",
+                         tickfont=dict(
+                             family="Times New Roman",
+                             size=25,
+                             color="Black"
+                         ),
+                         color="Black",
+                         )
 
         fig.update_layout(
             title=dict(
-                text=f'<span style="font-size: 30px;">ACSAHE</span><br><span style="font-size: 20px;">Diagrama de interacción para λ={list(data_subsets.keys())[0]} °</span><br>',
+                text=f'<span style="font-size: 30px;"><b>Diagrama de interacción para λ={list(data_subsets.keys())[0]} °</b></span><br>',
                 # text=f"<b>ACSAHEArchivo: {self.file_name}</b>",
                 x=0.5,
                 font=dict(
-                    color="rgb(142, 180, 227)",
+                    color=points_color,
                     family='Times New Roman')),
             xaxis=dict(showticklabels=True,
                        showgrid=True,
@@ -757,15 +921,20 @@ class ACSAHEPlotlyEngine(object):
             for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
 
     @staticmethod
-    def hover_text_estados(lista_x, lista_y, lista_z, lista_estado):
+    def _convert_to_int_if_possible(int_number):
+        try:
+            return int(int_number)
+        except Exception:
+            return int_number
+
+    def hover_text_estados(self, lista_x, lista_y, lista_z, lista_estado):
         return [
-            f"<b>Estado: {estado}</b><br>Pu: {round(z, 2)} kN<br>Mxu: {round(x, 2)} kNm<br>Myu: {round(y, 2)} kNm"
+            f"<b>Estado: {self._convert_to_int_if_possible(estado)}</b><br>Pu: {round(z, 2)} kN<br>Mxu: {round(x, 2)} kNm<br>Myu: {round(y, 2)} kNm"
             for x, y, z, estado in zip(lista_x, lista_y, lista_z, lista_estado)]
 
-    @staticmethod
-    def hover_text_estados_2d(lista_x, lista_y, lista_estado):
+    def hover_text_estados_2d(self, lista_x, lista_y, lista_estado):
         return [
-            f"<b>Estado: {estado}</b><br>Pu: {round(y, 2)} kN<br>Mu: {round(x, 2)} kNm"
+            f"<b>Estado: {self._convert_to_int_if_possible(estado)}</b><br>Pu: {round(y, 2)} kN<br>Mu: {round(x, 2)} kNm"
             for x, y, estado in zip(lista_x, lista_y, lista_estado)]
 
     @staticmethod

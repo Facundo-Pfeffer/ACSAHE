@@ -83,12 +83,10 @@ class Line(object):
     def show_line_pyplot(self):
         """Method useful for debugging."""
         plotly_util = ACSAHEPlotlyEngine()
-        plotly_util.plotly_segmento(self.start_node, self.end_node)
+        plotly_util.plotly_segment(self.start_node, self.end_node)
 
     def __and__(self, otra_recta) -> Node or None:
-        """Realiza la intersección de la recta con otra provista, en el plano.
-        :param otra_recta: recta a intersectar.
-        :return Nodo de intersección or None si no se encuentran"""
+        """Intersection of lines in 2D plane."""
         x1, y1, x2, y2 = self.start_node.x, self.start_node.y, self.end_node.x, self.end_node.y
         x3, y3, x4, y4 = otra_recta.start_node.x, otra_recta.start_node.y, otra_recta.end_node.x, otra_recta.end_node.y
         det = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
@@ -105,6 +103,7 @@ class Line(object):
         if intersection is None:
             return True
         return False
+
 
 class Vector(object):
     def __init__(self, start_node, end_node):
@@ -127,7 +126,7 @@ class Segment(object):
         self.extremos_x, self.extremos_y = self._get_segment_endpoints_ranges()
         self.vector = Vector(start_node, end_node)
 
-    def obtener_parametros_ecuacion_recta(self):
+    def _get_general_line_equation_params(self):
         x1, y1 = self.start_node.x, self.start_node.y
         x2, y2 = self.end_node.x, self.end_node.y
         a = y1 - y2
@@ -161,7 +160,7 @@ class Segment(object):
 
     def plot(self, **kwargs):
         plotly_util = ACSAHEPlotlyEngine()
-        plotly_util.plotly_segmento(self.start_node, self.end_node, **kwargs)
+        plotly_util.plotly_segment(self.start_node, self.end_node, **kwargs)
 
     def segment_vectors_share_orientation(self, other_segment):
         if not(self & other_segment is None):
@@ -228,90 +227,92 @@ class Segment(object):
             return all([self.start_node == other_segment.end_node, self.end_node == other_segment.start_node])
 
 
-class Poligono(object):
-    """Polígono CONVEXO en el plano, formado por una serie de nodos."""
+class Polygon(object):
+    """CONVEX polygon in the plane, formed by a series of nodes."""
     tipo = "Poligonal"
 
-    def __init__(self, nodos: List[Node], ordenar: bool = False):
+    def __init__(self, nodes: List[Node], sort_nodes: bool = False):
         """
-        :param nodos: lista de nodos que definen el contorno del polígono.
-        :param ordenar: Define si la lista de nodos anterior debe ser ordenada en sentido antihorario, siendo dicho
-         sentido el convencional para el programa."""
+        :param nodes: list of nodes that define the polygon's contour.
+        :param sort_nodes: Defines if the previous list of nodes should be sorted counterclockwise, being this
+        direction the conventional one for the software."""
 
-        self.nodos_extremos = nodos if not ordenar else self.ordenar_nodos_poligono_convexo_antihorario(nodos)
-        self.x = [nodo.x for nodo in self.nodos_extremos]
-        self.y = [nodo.y for nodo in self.nodos_extremos]
-        self.total_de_nodos = len(nodos)
-        self.segmentos_borde = self.obtener_segmentos_borde()
-        valor_area = self.determinar_area_poligono()
-        if valor_area == 0 and isinstance(self, Contorno):
-            raise Exception(f"El contorno de índice {self.indice} contiene área 0. Por favor, revisar la entrada de datos.")
-        self.area = valor_area
-        if valor_area > TOLERANCE:
-            self.nodo_centroide = self.determinar_centroide()
-            self.xg, self.yg = self.nodo_centroide.x, self.nodo_centroide.y
-            # Se definen estos atributos para determinar si el elemento fue modificado por una intersección (ver método)
-            self.nodos_interseccion_lista = []
-            self.numero_de_modificaciones = 0
-            self.nodo_centroide_original = copy.copy(self.nodo_centroide)
-            self.area_original = valor_area
+        self.boundary_nodes_list = nodes if not sort_nodes else self._sort_nodes_counterclokwise(nodes)
+        self.x = [node.x for node in self.boundary_nodes_list]
+        self.y = [node.y for node in self.boundary_nodes_list]
+        self.nodes_count = len(nodes)
+        self.boundary_segments_list = self._get_boundary_segments()
+        area = self._get_polygon_area()
+        if area == 0 and isinstance(self, Region):
+            raise Exception(f"El region de índice {self.indice} contiene área 0. Por favor, revisar la entrada de datos.")
+        self.area = area
+        if area > TOLERANCE:
+            self.centroid_node = self._get_centroid_node()
+            self.xg, self.yg = self.centroid_node.x, self.centroid_node.y
+
+            # These attributes are defined to determine if the element was modified by an intersection (see method)
+            self.intersection_nodes_list = []
+            self.modifications_count = 0
+            self.centroid_node_original = copy.copy(self.centroid_node)
+            self.area_original = area
+
 
     @staticmethod
-    def ordenar_nodos_poligono_convexo_antihorario(nodos=None):
-        """Ordena los nodos en sentido antihorario, cuando el polígono SEA CONVEXO (requisito)."""
-        if nodos is None:
+    def _sort_nodes_counterclokwise(nodes_list=None):
+        """Sort nodes counterclockwise. The polygon MUST BE Convex."""
+        if nodes_list is None:
             return None
-        x_array = np.array([nodo.x for nodo in nodos])
-        y_array = np.array([nodo.y for nodo in nodos])
+        x_array = np.array([nodo.x for nodo in nodes_list])
+        y_array = np.array([nodo.y for nodo in nodes_list])
 
-        # Coordenadas del centroide
+        # Centroid coordinates
         x0 = np.mean(x_array)
         y0 = np.mean(y_array)
 
-        # Calcular las distancias desde el centroide a cada nodo
+        # Calculate distances from the centroid to each node
+
         r = np.sqrt((x_array - x0) ** 2 + (y_array - y0) ** 2)
-        # Calcula el ángulo antihorario con respecto al eje X de cada punto, y ordena basándose en el mismo.
+        # Calculate the counterclockwise angle with respect to the X axis for each point, and sort based on it
         angulos = np.arctan2(y_array - y0, x_array - x0)
         mask = np.argsort(angulos)
         x_sorted = x_array[mask]
         y_sorted = y_array[mask]
 
-        nodos_ordenados = []
+        sorted_nodes_list = []
         for i in range(len(x_sorted)):
-            nodos_ordenados.append(Node(x_sorted[i], y_sorted[i]))
-        return nodos_ordenados
+            sorted_nodes_list.append(Node(x_sorted[i], y_sorted[i]))
+        return sorted_nodes_list
 
-    def obtener_segmentos_borde(self):
-        """A partir de los nodos que fueron ingresados, obtiene la lista de segmentos de borde."""
+    def _get_boundary_segments(self):
         i = 0
-        imax = len(self.nodos_extremos)
+        imax = len(self.boundary_nodes_list)
         lista_de_segmentos = []
         while i < imax:
-            nodo_1 = self.nodos_extremos[i]
-            nodo_2 = self.nodos_extremos[i + 1] if i + 1 < imax else self.nodos_extremos[0]
+            nodo_1 = self.boundary_nodes_list[i]
+            nodo_2 = self.boundary_nodes_list[i + 1] if i + 1 < imax else self.boundary_nodes_list[0]
             lista_de_segmentos.append(Segment(nodo_1, nodo_2))
             i = i + 1
         return lista_de_segmentos
 
-    def determinar_area_poligono(self):
+    def _get_polygon_area(self):
         i = 0
-        imax = len(self.nodos_extremos)
+        imax = len(self.boundary_nodes_list)
         area = 0
         while i < imax:
-            nodo_1 = self.nodos_extremos[i]
-            nodo_2 = self.nodos_extremos[i + 1] if i + 1 < imax else self.nodos_extremos[0]
+            nodo_1 = self.boundary_nodes_list[i]
+            nodo_2 = self.boundary_nodes_list[i + 1] if i + 1 < imax else self.boundary_nodes_list[0]
             area = area + (nodo_1.x * nodo_2.y - nodo_2.x * nodo_1.y)
             i = i + 1
         return abs(area / 2)
 
-    def determinar_centroide(self):
+    def _get_centroid_node(self):
         try:
             i = 0
-            imax = len(self.nodos_extremos)
+            imax = len(self.boundary_nodes_list)
             cx, cy = 0, 0
             while i < imax:
-                nodo_1 = self.nodos_extremos[i]
-                nodo_2 = self.nodos_extremos[i + 1] if i + 1 < imax else self.nodos_extremos[0]
+                nodo_1 = self.boundary_nodes_list[i]
+                nodo_2 = self.boundary_nodes_list[i + 1] if i + 1 < imax else self.boundary_nodes_list[0]
                 cx = cx + (nodo_1.x + nodo_2.x) * (nodo_1.x * nodo_2.y - nodo_2.x * nodo_1.y)
                 cy = cy + (nodo_1.y + nodo_2.y) * (nodo_1.x * nodo_2.y - nodo_2.x * nodo_1.y)
                 i = i + 1
@@ -319,145 +320,143 @@ class Poligono(object):
         except RuntimeWarning as e:
             print(e)
 
-    def determinar_si_nodo_pertence_a_contorno(self, nodo_a_buscar: Node):
-        """Devuelve verdadero si el nodo se encuentra dentro del contorno, sin incluir los bordes del mismo."""
-        for i, nodo in enumerate(self.nodos_extremos):
-            nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
+    def is_node_inside_boundaries(self, nodo_a_buscar: Node):
+        """Returns True if the node is inside the boundaries of the polygon, False otherwise."""
+        for i, nodo in enumerate(self.boundary_nodes_list):
+            nodo_1, nodo_2, nodo_3 = self._get_3_nodes_per_index(i)
             recta = Line(nodo_1, nodo_2)  # Recta definida por el nodo 1 y nodo 2.
-            # La ecuación de la recta devolverá valores del mismo signo para puntos del mismo semiplano.
-            signo_semiplano_contorno = recta.line_implicit_equation(nodo_3)
-            if signo_semiplano_contorno == 0:
-                raise Exception(f"Error de Ingreso de datos: Ingresar puntos en el contorno que no estén alineados", )
-            signo_semiplano_elemento = recta.line_implicit_equation(nodo_a_buscar)
-            if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Si son de distinto signo, no pertenece.
+            # La ecuación de la recta devolverá valores del mismo sign para puntos del mismo semiplano.
+            sign_semiplano_region = recta.line_implicit_equation(nodo_3)
+            if sign_semiplano_region == 0:
+                raise Exception(f"Error de Ingreso de datos: Ingresar puntos en el region que no estén alineados", )
+            sign_semiplano_elemento = recta.line_implicit_equation(nodo_a_buscar)
+            if sign_semiplano_region * sign_semiplano_elemento < 0:  # Si son de distinto sign, no pertenece.
                 return False
         return True
 
-    def determinar_si_nodo_pertence_a_contorno_sin_bordes(self, nodo_a_buscar: Node):
-        """Devuelve verdadero si el nodo se encuentra dentro del contorno, sin incluir los bordes del mismo."""
-        for i, nodo in enumerate(self.nodos_extremos):
-            nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
+    def is_node_inside_borderless_boundaries(self, nodo_a_buscar: Node):
+        """Returns True if the node is inside the boundaries of the polygon BUT not in the boundaries, False otherwise."""
+        for i, nodo in enumerate(self.boundary_nodes_list):
+            nodo_1, nodo_2, nodo_3 = self._get_3_nodes_per_index(i)
             recta = Line(nodo_1, nodo_2)  # Recta definida por el nodo 1 y nodo 2.
-            # La ecuación de la recta devolverá valores del mismo signo para puntos del mismo semiplano.
-            signo_semiplano_contorno = recta.line_implicit_equation(nodo_3)
-            if signo_semiplano_contorno == 0:
-                raise Exception("Error de Ingreso de datos: Ingresar puntos en el contorno que no estén alineados.")
-            signo_semiplano_elemento = recta.line_implicit_equation(nodo_a_buscar)
-            if signo_semiplano_contorno * signo_semiplano_elemento <= 0:  # Si son de distinto signo, no pertenece.
+            # La ecuación de la recta devolverá valores del mismo sign para puntos del mismo semiplano.
+            sign_semiplano_region = recta.line_implicit_equation(nodo_3)
+            if sign_semiplano_region == 0:
+                raise Exception("Error de Ingreso de datos: Ingresar puntos en el region que no estén alineados.")
+            sign_semiplano_elemento = recta.line_implicit_equation(nodo_a_buscar)
+            if sign_semiplano_region * sign_semiplano_elemento <= 0:  # Si son de distinto sign, no pertenece.
                 return False
         return True
 
-    def obtener_3_nodos_x_indice(self, i_punto_1):
-        """
-        Obtiene el nodo en cuestión y los 2 nodos subsiguientes, basado en el índice del primer nodo.
-        Al quedar algún índice fuera de rango, se obtiene el primer o segundo elemento según corresponda."""
-        i_punto_2 = self.obtener_indice(i_punto_1, 1)
-        i_punto_3 = self.obtener_indice(i_punto_1, 2)
-        return self.nodos_extremos[i_punto_1], self.nodos_extremos[i_punto_2], self.nodos_extremos[i_punto_3]
+    def _get_3_nodes_per_index(self, i_first_node):
+        """Gets the node with index i_first_node and the 2 next nodes inside boundary_nodes_list
+        When any index falls out of range, it gets the first or second element as appropriate."""
+        i_second_node = self._get_node_index(i_first_node, 1)
+        i_third_node = self._get_node_index(i_first_node, 2)
+        return self.boundary_nodes_list[i_first_node], self.boundary_nodes_list[i_second_node], self.boundary_nodes_list[i_third_node]
 
-    def obtener_indice(self, indice_punto_1, valor_a_sumar: int):
-        """Obtiene el índice del próximo elemento, dependiendo de valor_a_sumar"""
-        i_punto = indice_punto_1 + valor_a_sumar
-        return i_punto if i_punto < self.total_de_nodos else i_punto - self.total_de_nodos
+    def _get_node_index(self, indice_punto_1, index_offset: int):
+        """Gets node index value inside boundary_nodes_list based on index_offset value"""
+        i_punto = indice_punto_1 + index_offset
+        return i_punto if i_punto < self.nodes_count else i_punto - self.nodes_count
 
-    def obtener_poligono_interseccion(self, otro_poligono):
-        """Obtiene el poligono que resulta de intersectar self con otro_poligono"""
-        lista_nodos_interseccion = self & otro_poligono
-        if not lista_nodos_interseccion:
+    def get_intersection_polygon(self, other_polygon):
+        """Returns the intersection of Polygons"""
+        intersection_nodes_list = self & other_polygon
+        if not intersection_nodes_list:
             return self
-        # Determinar que nodos de otro_poligono pertenecen a self
-        for nodo in otro_poligono.nodos_extremos:
-            if self.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo):
-                lista_nodos_interseccion.append(nodo)
-        for nodo_pos in self.nodos_extremos:  # Determinar que nodos de self pertenecen a otro_poligono
-            if otro_poligono.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo_pos):
-                lista_nodos_interseccion.append(nodo_pos)
-        if len(lista_nodos_interseccion) <= 2:
+        # Determines which nodes of other_polygon belong inside self
+        for nodo in other_polygon.boundary_nodes_list:
+            if self.is_node_inside_borderless_boundaries(nodo):
+                intersection_nodes_list.append(nodo)
+        for nodo_pos in self.boundary_nodes_list: # Determines which nodes of self are inside other_polygons
+            if other_polygon.is_node_inside_borderless_boundaries(nodo_pos):
+                intersection_nodes_list.append(nodo_pos)
+        if len(intersection_nodes_list) <= 2:
             return self
-        lista_nodos_interseccion = NodeList(lista_nodos_interseccion).remove_duplicates()
-        return Poligono(lista_nodos_interseccion, ordenar=True)
+        intersection_nodes_list = NodeList(intersection_nodes_list).remove_duplicates()
+        return Polygon(intersection_nodes_list, sort_nodes=True)
 
-    def restar_con_otro_poligono(self, otro_poligono):
-        """Resta al elemento self el complemento con otro_poligono.
-        :param otro_poligono: polígono que se le restará a self.
-        :return el mismo elemento self, pero modificado por la resta."""
+    def substract_with_other_polygon(self, other_polygon):
+        """Subtracts from the self element the complement with other_polygon.
+        :param other_polygon: polygon that will be subtracted from self.
+        :return: the same self element, but modified by the subtraction."""
 
-        lista_de_nodos_de_interseccion = self.obtener_nodos_compartidos_entre_poligonos(self, otro_poligono)
+        intersection_nodes_list = self._get_shared_nodes_list(self, other_polygon)
 
-        if len(lista_de_nodos_de_interseccion) <= 2:
+        if len(intersection_nodes_list) <= 2:
             return self
 
-        poligono_interno = Poligono(lista_de_nodos_de_interseccion, ordenar=True)
+        internal_polygon = Polygon(intersection_nodes_list, sort_nodes=True)
 
-        if self.area_y_centro_son_iguales(poligono_1=self, poligono_2=poligono_interno):
-            # Si la interseccion es igual al mismo poligono, será eliminado.
+        if self.area_y_centro_son_iguales(poligono_1=self, poligono_2=internal_polygon):
+            # If the intersection equals self, it will be removed.
             return None
 
-        nueva_area = self.area - poligono_interno.area
-        nueva_x = (self.area * self.xg - poligono_interno.area * poligono_interno.xg) / nueva_area
-        nueva_y = (self.area * self.yg - poligono_interno.area * poligono_interno.yg) / nueva_area
+        nueva_area = self.area - internal_polygon.area
+        nueva_x = (self.area * self.xg - internal_polygon.area * internal_polygon.xg) / nueva_area
+        nueva_y = (self.area * self.yg - internal_polygon.area * internal_polygon.yg) / nueva_area
 
-        if not self.nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):
+        if not self._is_new_polygon_valid(nueva_area, nueva_x, nueva_y):
             return None
-        self.numero_de_modificaciones = self.numero_de_modificaciones + 1
+        self.modifications_count = self.modifications_count + 1
 
         self.area = nueva_area
         self.xg, self.yg = nueva_x, nueva_y
-        self.nodo_centroide = Node(nueva_x, nueva_y)
-        self.nodos_interseccion_lista = lista_de_nodos_de_interseccion + self.nodos_interseccion_lista
+        self.centroid_node = Node(nueva_x, nueva_y)
+        self.intersection_nodes_list = intersection_nodes_list + self.intersection_nodes_list
         return self  # self modificado
 
     @staticmethod
-    def nuevo_poligono_es_valido(nueva_area, nueva_x, nueva_y):  # Criterio: área=0|nodo en infinito numérico.
+    def _is_new_polygon_valid(nueva_area, nueva_x, nueva_y):  # Criterio: área=0|nodo en infinito numérico.
         return not (-TOLERANCE * TOLERANCE <= nueva_area <= TOLERANCE * TOLERANCE or nueva_x == float(
             "inf") or nueva_y == float("inf"))
 
     @staticmethod
-    def obtener_nodos_compartidos_entre_poligonos(poligono_1, poligono_2):
-        """Devuelve una lista de:
-        Aquellos nodos que intersectan alguno de los bordes entre los polígonos
-        Los nodos de poligono_1 que se encuentran dentro de poligono_2, y viceversa."""
-
-        lista_nodos_interseccion = poligono_1 & poligono_2  # Intersección de bordes
-        if not lista_nodos_interseccion:  # no hay intersección
+    def _get_shared_nodes_list(polygon_1, polygon_2):
+        """Returns a list of:
+        Nodes that intersect any of the edges between the polygons
+        Nodes from poligono_1 that are within poligono_2, and vice versa."""
+        
+        shared_nodes_list = polygon_1 & polygon_2  # Shared boundaries
+        if not shared_nodes_list:  # No intersection
             return []
 
-        for nodo in poligono_2.nodos_extremos:  # Determinar qué nodos de otro_poligono pertenecen a self
-            if poligono_1.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo):
-                lista_nodos_interseccion.append(nodo)
-        for nodo_pos in poligono_1.nodos_extremos:  # Determinar qué nodos de self pertenecen a otro_poligono
-            if poligono_2.determinar_si_nodo_pertence_a_contorno_sin_bordes(nodo_pos):
-                lista_nodos_interseccion.append(nodo_pos)
-        nodos_interseccion = NodeList(lista_nodos_interseccion).remove_duplicates()
-        return nodos_interseccion
+        for nodo in polygon_2.boundary_nodes_list:  # Gets nodes from polygon_2 that are inside polygon_1
+            if polygon_1.is_node_inside_borderless_boundaries(nodo):
+                shared_nodes_list.append(nodo)
+        for nodo_pos in polygon_1.boundary_nodes_list:  # Gets nodes from polygon_2 that are inside polygon_1
+            if polygon_2.is_node_inside_borderless_boundaries(nodo_pos):
+                shared_nodes_list.append(nodo_pos)
+        intersection_nodes = NodeList(shared_nodes_list).remove_duplicates()
+        return intersection_nodes
 
     def is_segment_a_border_segment(self, segment: Segment):
-        for border_segment in self.segmentos_borde:
+        for border_segment in self.boundary_segments_list:
             if border_segment == segment:
                 return True
         return False
 
-    def __and__(self, otro_poligono):
-        """Devuelve los nodos de interseccion de dos poligonos"""
-        lista_nodos_interseccion = []
-        if isinstance(self, ContornoCircular) or isinstance(otro_poligono, ContornoCircular):
-            return lista_nodos_interseccion
-        for segmento_contorno in self.segmentos_borde:
-            for segmento_rectangulo in otro_poligono.segmentos_borde:
-                interseccion = segmento_contorno & segmento_rectangulo
+    def __and__(self, other_polygon):
+        """Returns intersection nodes between the borders of self and other_polygon"""
+        intersection_nodes_list = []
+        if isinstance(self, CircularRegion) or isinstance(other_polygon, CircularRegion):
+            return intersection_nodes_list
+        for region_boundary_segment in self.boundary_segments_list:
+            for other_boundary_segment in other_polygon.boundary_segments_list:
+                interseccion = region_boundary_segment & other_boundary_segment
                 if interseccion:
                     nodo_interseccion = Node(interseccion.x, interseccion.y)
-                    if not (any(nodo_interseccion == nodo_x for nodo_x in lista_nodos_interseccion)):
-                        lista_nodos_interseccion.append(nodo_interseccion)
-        return lista_nodos_interseccion or None
+                    if not (any(nodo_interseccion == nodo_x for nodo_x in intersection_nodes_list)):
+                        intersection_nodes_list.append(nodo_interseccion)
+        return intersection_nodes_list or None
 
-    def pertenece_a_contorno(self, contorno):
-        """Determina si self está contenido dentro de poligono mayor"""
-        centro_pertenece_a_contorno = contorno.determinar_si_nodo_pertence_a_contorno(self.nodo_centroide)
-        if not centro_pertenece_a_contorno:
+    def is_node_in_element(self, region):
+        centro_is_node_in_element = region.is_node_inside_boundaries(self.centroid_node)
+        if not centro_is_node_in_element:
             return False
-        if not isinstance(contorno, ContornoCircular):  # TODO add functionality
-            intersecciones = contorno & self
+        if not isinstance(region, CircularRegion):  # TODO add functionality
+            intersecciones = region & self
             return True if not intersecciones else False
         return True
 
@@ -468,19 +467,17 @@ class Poligono(object):
             poligono_2.xg - TOLERANCE <= poligono_1.xg <= poligono_2.xg + TOLERANCE and \
             poligono_2.yg - TOLERANCE <= poligono_1.yg <= poligono_2.yg + TOLERANCE
 
-    def desplazar_sistema_de_referencia(self, desp_x, desp_y):
+    def translate_reference_frame(self, desp_x, desp_y):
         self.xg = self.xg + desp_x
         self.yg = self.yg + desp_y
-        # Para que se muestre la discretización correctamente
-        for nodo_extremo in self.nodos_extremos:
+        for nodo_extremo in self.boundary_nodes_list:
             nodo_extremo.x = nodo_extremo.x + desp_x
             nodo_extremo.y = nodo_extremo.y + desp_y
-        self.segmentos_borde = self.obtener_segmentos_borde()
+        self.boundary_segments_list = self._get_boundary_segments()
 
 
-class ElementoRectangular(Poligono):
-    """El elemento finito que compone a un Polígono mayor.
-     Al estar formado por 4 nodos compone en sí un Polígono."""
+class RectangularElement(Polygon):
+    """A rectangular finite element. It inherits the properties of a Polygon."""
 
     def __init__(self, ubicacion_centro: Node, medidas: tuple):
         a, b = medidas
@@ -490,312 +487,296 @@ class ElementoRectangular(Poligono):
         self.ubicacion_centro = ubicacion_centro
         self.medidas = medidas
         self.perimetro = 2 * a + 2 * b
-        super().__init__(self.obtener_nodos_extremos())
+        super().__init__(self.obtener_boundary_nodes_list())
 
-    def determinar_area_poligono(self):
+    def _get_polygon_area(self):
         return self.lado_x * self.lado_y
 
-    def determinar_centroide(self):
+    def _get_centroid_node(self):
         return self.ubicacion_centro
 
-    def obtener_nodos_extremos(self):
+    def obtener_boundary_nodes_list(self):
         x, y = self.x_centro, self.y_centro
         a, b = self.lado_x, self.lado_y
         return Node(x + a / 2, y + b / 2), Node(x + a / 2, y - b / 2), Node(x - a / 2, y - b / 2), Node(x - a / 2,
                                                                                                         y + b / 2)
 
-    def obtener_segmentos_borde(self):
+    def _get_boundary_segments(self):
         return (
-            Segment(self.nodos_extremos[0], self.nodos_extremos[1]),
-            Segment(self.nodos_extremos[1], self.nodos_extremos[2]),
-            Segment(self.nodos_extremos[2], self.nodos_extremos[3]),
-            Segment(self.nodos_extremos[3], self.nodos_extremos[0])
+            Segment(self.boundary_nodes_list[0], self.boundary_nodes_list[1]),
+            Segment(self.boundary_nodes_list[1], self.boundary_nodes_list[2]),
+            Segment(self.boundary_nodes_list[2], self.boundary_nodes_list[3]),
+            Segment(self.boundary_nodes_list[3], self.boundary_nodes_list[0])
         )
 
 
-class ElementoTrapecioCircular(object):
-    tipo = "Trapecio Circular"
+class AnnularSectorElement(object):
+    tipo = "Annular Sector"
 
-    def __init__(self, nodo_centro: Node, radios: tuple, angulos):
-        self.area = math.radians(angulos[1] - angulos[0]) * (radios[1] ** 2 - radios[0] ** 2) / 2
-        angulo_medio = math.radians(angulos[1] + angulos[0]) / 2
+    def __init__(self, centroid_node: Node, boundary_radii_list: tuple, boundary_angles_list):
+        self.area = math.radians(boundary_angles_list[1] - boundary_angles_list[0]) * (boundary_radii_list[1] ** 2 - boundary_radii_list[0] ** 2) / 2
+        angulo_medio = math.radians(boundary_angles_list[1] + boundary_angles_list[0]) / 2
 
-        self.angulo_inicial, self.angulo_final = min(angulos), max(angulos)
-        self.radio_interno, self.radio_externo = min(radios), max(radios)
-        self.nodo_centroide = nodo_centro
-        self.nodo_centro = nodo_centro
-        self.xc = nodo_centro.x
-        self.yc = nodo_centro.y
+        self.start_angle, self.end_angle = min(boundary_angles_list), max(boundary_angles_list)
+        self.internal_radius, self.external_radius = min(boundary_radii_list), max(boundary_radii_list)
+        self.centroid_node = centroid_node
+        self.centroid_node = centroid_node
+        self.xc = centroid_node.x
+        self.yc = centroid_node.y
 
-        theta = math.radians(self.angulo_final - self.angulo_inicial) / 2
+        theta = math.radians(self.end_angle - self.start_angle) / 2
 
-        # El centroide de un sector circular se define como 2R sin(θ)/(3θ); siendo R el radio y θ la apertura del sector
-        area_1 = math.radians(self.angulo_final - self.angulo_inicial) * (self.radio_externo ** 2) / 2
-        area_2 = math.radians(self.angulo_final - self.angulo_inicial) * (self.radio_interno ** 2) / 2
-        radio_al_centroide = 2 * math.sin(theta) / (3 * theta) * (
-                self.radio_externo * area_1 - self.radio_interno * area_2) / self.area
-        self.xg = math.cos(angulo_medio) * radio_al_centroide + self.xc
-        self.yg = math.sin(angulo_medio) * radio_al_centroide + self.yc
-        self.nodo_centroide = Node(self.xg, self.yg)
+        # The centroid is defined by 2R sin(θ)/(3θ); R stands for radius and θ the angle.
+        external_area = math.radians(self.end_angle - self.start_angle) * (self.external_radius ** 2) / 2
+        internal_area = math.radians(self.end_angle - self.start_angle) * (self.internal_radius ** 2) / 2
+        centroid_radius = 2 * math.sin(theta) / (3 * theta) * (
+                self.external_radius * external_area - self.internal_radius * internal_area) / self.area
+        self.xg = math.cos(angulo_medio) * centroid_radius + self.xc
+        self.yg = math.sin(angulo_medio) * centroid_radius + self.yc
+        self.centroid_node = Node(self.xg, self.yg)
 
-        self.nodos_extremos = self.obtener_nodos_extremos()
-        self.segmentos_rectos = self.obtener_segmentos_rectos()
+        self.boundary_nodes_list = self._get_boundary_nodes_list()
+        self.boundary_straight_segments_list = self._get_straight_boundary_segments_list()
 
-    def obtener_nodos_extremos(self):
-        resultado = []
-        if self.radio_interno == 0:  # Circulo
+    def _get_boundary_nodes_list(self):
+        nodes_list = []
+        if self.internal_radius == 0:  # Portion of circle
             return []
-        for theta in [self.angulo_inicial, self.angulo_final]:
-            for r in [self.radio_interno, self.radio_externo]:
-                resultado.append(
+        for theta in [self.start_angle, self.end_angle]:
+            for r in [self.internal_radius, self.external_radius]:
+                nodes_list.append(
                     Node(self.xc + r * math.cos(math.radians(theta)), self.yc + r * math.sin(math.radians(theta))))
-        return resultado
+        return nodes_list
 
-    def obtener_segmentos_rectos(self):
-        if len(self.nodos_extremos) == 0:
+    def _get_straight_boundary_segments_list(self):
+        if len(self.boundary_nodes_list) == 0:
             return None
         return (
-            Segment(self.nodos_extremos[0], self.nodos_extremos[1]),
-            Segment(self.nodos_extremos[2], self.nodos_extremos[3])
+            Segment(self.boundary_nodes_list[0], self.boundary_nodes_list[1]),
+            Segment(self.boundary_nodes_list[2], self.boundary_nodes_list[3])
         )
 
-    def nodo_en_elemento(self, nodo: Node):
-        xc, yc = nodo.x - self.nodo_centro.x, nodo.y - self.nodo_centro.y
+    def is_node_in_annular_sector(self, nodo: Node):
+        xc, yc = nodo.x - self.centroid_node.x, nodo.y - self.centroid_node.y
         angulo = math.atan2(yc, xc)
         angulo = angulo + 360 if angulo < 0 else angulo  # Sumar 360 para convertir a ángulo con respecto a x.
         radio = math.sqrt(xc ** 2 + yc ** 2)
-        return self.angulo_inicial <= angulo <= self.angulo_final and self.radio_interno <= radio <= self.radio_externo
+        return self.start_angle <= angulo <= self.end_angle and self.internal_radius <= radio <= self.external_radius
 
-    def desplazar_sistema_de_referencia(self, desp_x, desp_y):
+    def translate_reference_frame(self, desp_x, desp_y):
         self.xg += desp_x
         self.xc += desp_x
         self.yg += desp_y
         self.yc += desp_y
-        self.nodo_centro.x += desp_x
-        self.nodo_centro.y += desp_y
-        self.nodos_extremos = self.obtener_nodos_extremos()
-        self.segmentos_rectos = self.obtener_segmentos_rectos()
+        self.centroid_node.x += desp_x
+        self.centroid_node.y += desp_y
+        self.boundary_nodes_list = self._get_boundary_nodes_list()
+        self.boundary_straight_segments_list = self._get_straight_boundary_segments_list()
 
-    def pertenece_a_contorno(self, contorno):
+    def is_node_in_element(self, region):
         """Determina si self está contenido dentro de polígono mayor"""
-        return contorno.determinar_si_nodo_pertence_a_contorno(self.nodo_centroide)
+        return region.is_node_inside_boundaries(self.centroid_node)
 
 
-class ContornoCircular(ElementoTrapecioCircular):
+class CircularRegion(AnnularSectorElement):
     tipo = "Circular"
 
-    def __init__(self, nodo_centro: Node, indice, radios: tuple, angulos: tuple = (0, 360), signo=1):
-        self.signo = signo
-        super().__init__(nodo_centro, radios, angulos)
+    def __init__(self, centroid_node: Node, indice, boundary_radii_list: tuple, boundary_angles_list: tuple = (0, 360), sign=1):
+        self.sign = sign
+        super().__init__(centroid_node, boundary_radii_list, boundary_angles_list)
 
-    def discretizar_contorno(self, discretizacion_angulo, discretizacion_radio):
-        """Define la lista de elementos tipo ElementoRectangular que se encuentran dentro del contorno."""
+    def generate_mesh(self, discretizacion_angulo, discretizacion_radio):
+        """Define la lista de elements_list tipo ElementoRectangular que se encuentran dentro del region."""
         n = discretizacion_radio
-        funcion_radios = lambda i: self.radio_interno + (self.radio_externo - self.radio_interno) * (
+        funcion_radii = lambda i: self.internal_radius + (self.external_radius - self.internal_radius) * (
                 1 - (1 - i / n) ** 1.25)
 
         resultado = []
-        radio = self.radio_interno
-        radio_final = funcion_radios(1)
+        radio = self.internal_radius
+        radio_final = funcion_radii(1)
         i_inicial = 0
 
-        if self.radio_interno == 0:  # Sector central circular
-            resultado.append(ElementoTrapecioCircular(
-                nodo_centro=self.nodo_centroide,
-                angulos=(self.angulo_inicial, self.angulo_final),
-                radios=(radio, radio_final / 2)))
-            angulo = self.angulo_inicial
-            while angulo <= self.angulo_final - discretizacion_angulo:
-                resultado.append(ElementoTrapecioCircular(
-                    nodo_centro=self.nodo_centroide,
-                    angulos=(angulo, angulo + discretizacion_angulo),
-                    radios=(radio_final / 2, radio_final)))
+        if self.internal_radius == 0:  # Sector central circular
+            resultado.append(AnnularSectorElement(
+                centroid_node=self.centroid_node,
+                boundary_angles_list=(self.start_angle, self.end_angle),
+                boundary_radii_list=(radio, radio_final / 2)))
+            angulo = self.start_angle
+            while angulo <= self.end_angle - discretizacion_angulo:
+                resultado.append(AnnularSectorElement(
+                    centroid_node=self.centroid_node,
+                    boundary_angles_list=(angulo, angulo + discretizacion_angulo),
+                    boundary_radii_list=(radio_final / 2, radio_final)))
                 angulo = angulo + discretizacion_angulo
             i_inicial = i_inicial + 1
 
-        for i_radios in range(i_inicial, n):
-            radio = funcion_radios(i_radios)
-            radio_final = funcion_radios(i_radios + 1)
-            angulo = self.angulo_inicial
-            while angulo <= self.angulo_final - discretizacion_angulo:
-                resultado.append(ElementoTrapecioCircular(
-                    nodo_centro=self.nodo_centroide,
-                    angulos=(angulo, angulo + discretizacion_angulo),
-                    radios=(radio, radio_final)))
+        for i_radii in range(i_inicial, n):
+            radio = funcion_radii(i_radii)
+            radio_final = funcion_radii(i_radii + 1)
+            angulo = self.start_angle
+            while angulo <= self.end_angle - discretizacion_angulo:
+                resultado.append(AnnularSectorElement(
+                    centroid_node=self.centroid_node,
+                    boundary_angles_list=(angulo, angulo + discretizacion_angulo),
+                    boundary_radii_list=(radio, radio_final)))
                 angulo = angulo + discretizacion_angulo
         return resultado
 
-    def eliminar_elementos_fuera_de_contorno(self, lista_de_elementos):
-        """Elimina aquellos elementos definidos preliminarmente que finalmente se encuentran por fuera del contorno."""
-        for elemento_diferencial in lista_de_elementos.copy():
-            if not self.nodo_en_elemento(elemento_diferencial.nodo_centroide):  # Fuera del semiplano del contorno.
-                lista_de_elementos.remove(elemento_diferencial)
-        return lista_de_elementos
+    def remove_outside_elements(self, elements_list):
+        """Remove elements that lay outside the Polygon limits."""
+        for elemento_diferencial in elements_list.copy():
+            if not self.is_node_in_annular_sector(elemento_diferencial.centroid_node):  # Fuera del semiplano del region.
+                elements_list.remove(elemento_diferencial)
+        return elements_list
 
-    def determinar_si_nodo_pertence_a_contorno(self, nodo: Node):
-        distancia_centro = self.nodo_centro - nodo
-        radio_interno_with_tolerance = max(self.radio_interno - TOLERANCE, 0.00)  # Avoiding negative values.
-        return radio_interno_with_tolerance <= distancia_centro <= self.radio_externo + TOLERANCE
+    def is_node_inside_boundaries(self, nodo: Node):
+        distancia_centro = self.centroid_node - nodo
+        internal_radius_with_tolerance = max(self.internal_radius - TOLERANCE, 0.00)  # Avoiding negative values.
+        return internal_radius_with_tolerance <= distancia_centro <= self.external_radius + TOLERANCE
 
-    def determinar_si_nodo_pertence_a_contorno_sin_bordes(self, nodo: Node):
-        distancia_centro = self.nodo_centro - nodo
-        return self.radio_interno < distancia_centro < self.radio_externo
+    def is_node_inside_borderless_boundaries(self, nodo: Node):
+        distancia_centro = self.centroid_node - nodo
+        return self.internal_radius < distancia_centro < self.external_radius
 
 
-class Contorno(Poligono):
-    """Un contorno es un polígono el cual podrá ser discretizado en elementos tipo ElementoRectangular.
-    Además, el atributo signo lleva asignado un significado:
-    """
+class Region(Polygon):
     tipo = "Poligonal"
 
-    def __init__(self, nodos: list, signo: int, indice, ordenar=False):
-        self.signo = signo
+    def __init__(self, nodes: list, sign: int, indice, sort_nodes=False):
+        self.sign = sign
         self.indice = indice
-        super().__init__(nodos, ordenar=ordenar)
+        super().__init__(nodes, sort_nodes=sort_nodes)
 
-    def discretizar_contorno(self, dx, dy):
-        """Define la lista de elementos tipo ElementoRectangular que se encuentran dentro del contorno."""
-        lista_de_elementos = self.obtener_lista_de_elementos_preliminar(dx, dy)
-        lista_de_elementos.sort(key=lambda elemento: (elemento.y, elemento.x))
-        # Elementos con coordenadas no válidas deben ser limpiados
-        lista_elem_validos = [elem for elem in lista_de_elementos if elem.area > TOLERANCE and (not (math.isnan(elem.xg) or math.isnan(elem.yg)))]
-        return self.eliminar_elementos_fuera_de_contorno(
-            lista_elem_validos)  # Limpieza adicional de elementos no válidos.
+    def generate_mesh(self, dx, dy):
+        """Generates the mesh based on contiguous RectangularElement"""
+        elements_list = self._get_raw_list_of_elements(dx, dy)
+        elements_list.sort(key=lambda element: (element.y, element.x))
+        # Non-valid elements are removed
+        lista_elem_validos = [elem for elem in elements_list if elem.area > TOLERANCE and (not (math.isnan(elem.xg) or math.isnan(elem.yg)))]
+        return self.remove_outside_elements(
+            lista_elem_validos)  # Additional filtering
 
-    def obtener_lista_de_elementos_preliminar(self, dx, dy):
-        """Obtiene la lista de elementos preliminarmente del rectángulo mayor que contiene al contorno, para luego
-         eliminar los restantes."""
-        lista_de_elementos = []
-        lista_de_direcciones = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
-        for direccion in lista_de_direcciones:
+    def _get_raw_list_of_elements(self, dx, dy):
+        list_of_elements = []
+        direction_vectors_list = [(1, 1), (1, -1), (-1, -1), (-1, 1)]
+        for direccion in direction_vectors_list:
             x_partida = self.xg + direccion[0] * dx / 2
             y_partida = self.yg + direccion[1] * dy / 2
-            lista_de_elementos = lista_de_elementos + self.elementos_segun_direccion(x_partida, y_partida, dx, dy,
-                                                                                     direccion)
-        return lista_de_elementos
+            list_of_elements = list_of_elements + self.elements_per_direction(x_partida, y_partida, dx, dy,
+                                                                              direccion)
+        return list_of_elements
 
-    def elementos_segun_direccion(self, x_partida, y_partida, dx, dy, direccion: tuple):
-        """La direccion de avance viene dada por una tupla tipo (±1; ±1), el primer término indicando si es positivo
-        en X y el segundo si lo es en Y."""
+    def elements_per_direction(self, x_partida, y_partida, dx, dy, direction: tuple):
         x_max, y_max = max(self.x), max(self.y)
         x_min, y_min = min(self.x), min(self.y)
-        lista_de_elementos = []
-        condicion_y = lambda yp: yp - dy / 2 < y_max if direccion[1] == 1 else yp + dy / 2 > y_min
-        condicion_x = lambda xp: xp - dx / 2 < x_max if direccion[0] == 1 else xp + dx / 2 > x_min
+        elements_list = []
+        y_condition = lambda yp: yp - dy / 2 < y_max if direction[1] == 1 else yp + dy / 2 > y_min
+        x_condition = lambda xp: xp - dx / 2 < x_max if direction[0] == 1 else xp + dx / 2 > x_min
         x = x_partida
         y = y_partida
-        while condicion_y(y):
-            while condicion_x(x):
-                rectangulo_diferencial = ElementoRectangular(ubicacion_centro=Node(x, y), medidas=(dx, dy))
-                rectangulo_diferencial = rectangulo_diferencial.obtener_poligono_interseccion(
-                    self)  # recortando con bordes de contorno
-                lista_de_elementos.append(rectangulo_diferencial)
-                x = x + direccion[0] * dx
-            y = y + direccion[1] * dy
+        while y_condition(y):
+            while x_condition(x):
+                rectandultar_element = RectangularElement(ubicacion_centro=Node(x, y), medidas=(dx, dy))
+                rectandultar_element = rectandultar_element.get_intersection_polygon(self)  # Trimming boundaries
+                elements_list.append(rectandultar_element)
+                x = x + direction[0] * dx
+            y = y + direction[1] * dy
             x = x_partida
-        return lista_de_elementos
+        return elements_list
 
-    def eliminar_elementos_fuera_de_contorno(self, lista_de_elementos):
-        """Elimina aquellos elementos definidos preliminarmente que finalmente se encuentran por fuera del contorno."""
-        for i, nodo in enumerate(self.nodos_extremos):
-            nodo_1, nodo_2, nodo_3 = self.obtener_3_nodos_x_indice(i)
-            recta = Line(nodo_1, nodo_2)  # Recta definida por el nodo 1 y 2.
-            # La ecuación de la recta devuelve números del mismo signos para puntos en el mismo semiplano
-            signo_semiplano_contorno = recta.line_implicit_equation(nodo_3)
-            if signo_semiplano_contorno == 0:
+    def remove_outside_elements(self, elements_list):
+        """Remove elements from elements_list that lay outside the region."""
+        for i, nodo in enumerate(self.boundary_nodes_list):
+            node_1, node_2, node_3 = self._get_3_nodes_per_index(i)
+            line_1_2 = Line(node_1, node_2)
+            # The line equation returns numbers with the same sign for points on the same semi-plane.
+            inside_semi_plane_sign = line_1_2.line_implicit_equation(node_3)
+            if inside_semi_plane_sign == 0:
                 raise Exception(
-                    f"Por favor, ingresar puntos en el contorno que no estén alineados. Contorno: {self.indice}")
-            for elemento_diferencial in lista_de_elementos.copy():
-                signo_semiplano_elemento = recta.line_implicit_equation(elemento_diferencial.nodo_centroide)
-                if signo_semiplano_contorno * signo_semiplano_elemento < 0:  # Fuera del semiplano del contorno.
-                    lista_de_elementos.remove(elemento_diferencial)
-        return lista_de_elementos
+                    f"Por favor, ingresar puntos en el region que no estén alineados. Region de índice: {self.indice}")
+            for element in elements_list.copy():
+                element_semi_plane_sign = line_1_2.line_implicit_equation(element.centroid_node)
+                if inside_semi_plane_sign * element_semi_plane_sign < 0:  # The element is outside the region.
+                    elements_list.remove(element)
+        return elements_list
 
-class SeccionArbitraria(object):
-    """Una Sección Arbitraria será la combinación de objetos tipo Contorno.
-    Los elementos con signo positivo representan regiones de alma llena mientras que las negativas regiones vacías."""
 
-    def __init__(self, contornos: dict, discretizacion):
-        self.dx, self.dy, self.dr, self.d_ang = discretizacion
-        self.contornos_negativos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == -1]
-        self.contornos_positivos = [contorno for indice_contorno, contorno in contornos.items() if contorno.signo == 1]
-        self.elementos = self.obtener_matriz_elementos_positivos()
-        self.area, self.xg, self.yg = self.obtener_baricentro_y_area()
-        self.cambiar_coordenadas_a_baricentro()
-        self.Ix, self.Iy = self.calcular_inercias()
-        self.x_min, self.x_max, self.y_min, self.y_max = self.obtener_valores_extremos()
+class ArbitraryCrossSection(object):
+    """An ArbitraryCrossSection combines Region elements.
+    Elements with a positive sign represent solid web regions, while negative ones represent void regions."""
 
-    def obtener_matriz_elementos_positivos(self):
-        result = []
-        for contorno_positivo in self.contornos_positivos:
-            if contorno_positivo.tipo == "Poligonal":
-                lista_elementos_positivos = contorno_positivo.discretizar_contorno(self.dx, self.dy)
+    def __init__(self, regions: dict, mesh_data):
+        self.dx, self.dy, self.dr, self.d_ang = mesh_data
+        self.void_regions_list = [region for i_region, region in regions.items() if region.sign == -1]
+        self.solid_regions_list = [region for i_region, region in regions.items() if region.sign == 1]
+        self.elements_list = self._get_solid_elements_list()
+        self.area, self.xg, self.yg = self._compute_centroid_and_area()
+        self.shift_coordinate_origin_to_centroid()
+        self.Ix, self.Iy = self.compute_xy_moments_of_intertia()
+        self.x_min, self.x_max, self.y_min, self.y_max = self.get_boundary_box_extremes()
+
+    def _get_solid_elements_list(self):
+        solid_elements_list = []
+        for solid_regions in self.solid_regions_list:
+            if solid_regions.tipo == "Poligonal":
+                lista_elements_list_positivos = solid_regions.generate_mesh(self.dx, self.dy)
             else:  # Circular
-                lista_elementos_positivos = contorno_positivo.discretizar_contorno(discretizacion_angulo=self.d_ang,
+                lista_elements_list_positivos = solid_regions.generate_mesh(discretizacion_angulo=self.d_ang,
                                                                                    discretizacion_radio=self.dr)
-            for elemento_positivo in lista_elementos_positivos:
-                if self.elemento_pertenece_a_contorno_negativo(
-                        elemento_positivo) or elemento_positivo.area < TOLERANCE:
-                    continue  # Descartar elemento
-                elemento_intersectado = self.obtener_interseccion_elemento_positivo_con_negativo(elemento_positivo)
-                if elemento_intersectado and elemento_intersectado.area > TOLERANCE:
-                    result.append(elemento_intersectado)
-        if len(result) == 0:
+            for solid_element in lista_elements_list_positivos:
+                if self.is_element_in_negative_region(
+                        solid_element) or solid_element.area < TOLERANCE:
+                    continue  # Discards element
+                trimmed_element = self.intersect_solid_element_with_void_element(solid_element)
+                if trimmed_element and trimmed_element.area > TOLERANCE:
+                    solid_elements_list.append(trimmed_element)
+        if len(solid_elements_list) == 0:
             raise Exception("Error en la generación de la geometría:\n"
-                            "No se encontraron contornos positivos por fuera de contornos negativos.")
-        return result
+                            "No se encontraron regions positivos por fuera de regions negativos.")
+        return solid_elements_list
 
-    def elemento_pertenece_a_contorno_negativo(self, elemento_positivo: Poligono):
-        for contorno_negativo in self.contornos_negativos:
-            if elemento_positivo.pertenece_a_contorno(contorno_negativo):  # Pertenece COMPLETAMENTE a elemento
+    def is_element_in_negative_region(self, solid_element: Polygon):
+        for void_regionativo in self.void_regions_list:
+            if solid_element.is_node_in_element(void_regionativo):  # Pertenece COMPLETAMENTE a element
                 return True
         return False
 
-    def obtener_interseccion_elemento_positivo_con_negativo(self, elemento_positivo):
-        if not(isinstance(elemento_positivo, ElementoTrapecioCircular)):
-            for contorno_neg in self.contornos_negativos:
-                elemento_positivo = elemento_positivo.restar_con_otro_poligono(contorno_neg)
-                if elemento_positivo is None:
+    def intersect_solid_element_with_void_element(self, solid_element):
+        if not(isinstance(solid_element, AnnularSectorElement)):
+            for void_region in self.void_regions_list:
+                solid_element = solid_element.substract_with_other_polygon(void_region)
+                if solid_element is None:
                     return None
-        return elemento_positivo
+        return solid_element
 
-    def mostrar_contornos_2d(self, ax):
-        for contorno_negativo in self.contornos_negativos:
-            contorno_negativo.plot(indice_color=2, espesor=2, ax=ax)
-        for contorno_positivo in self.contornos_positivos:
-            contorno_positivo.plot(ax=ax, indice_color=2, espesor=2)
-
-    def mostrar_discretizacion_2d(self, ax):
-        [elemento.plot(indice_color=3, espesor=1, mostrar_centroide=True, ax=ax, transparencia=0.6) for elemento in self.elementos]
-
-    def obtener_baricentro_y_area(self):
+    def _compute_centroid_and_area(self):
         area_total = 0
         sx = 0
         sy = 0
-        for elemento in self.elementos:
-            area_total = area_total + elemento.area
-            sx = sx + elemento.area * elemento.xg
-            sy = sy + elemento.area * elemento.yg
+        for element in self.elements_list:
+            area_total = area_total + element.area
+            sx = sx + element.area * element.xg
+            sy = sy + element.area * element.yg
         return round(area_total, 10), round(sx / area_total, 10), round(sy / area_total, 10)
 
-    def calcular_inercias(self):
+    def compute_xy_moments_of_intertia(self):
         Ix = 0
         Iy = 0
-        for elemento in self.elementos:
-            Ix = Ix + elemento.area * (elemento.yg**2)
-            Iy = Iy + elemento.area * (elemento.xg**2)
+        for element in self.elements_list:
+            Ix = Ix + element.area * (element.yg**2)
+            Iy = Iy + element.area * (element.xg**2)
         return round(Ix, 0), round(Iy, 0)
 
-    def cambiar_coordenadas_a_baricentro(self):
-        for elemento in self.elementos:
-            elemento.desplazar_sistema_de_referencia(desp_x=-self.xg, desp_y=-self.yg)
-        for contorno_pos in self.contornos_positivos:
-            contorno_pos.desplazar_sistema_de_referencia(desp_x=-self.xg, desp_y=-self.yg)
-        for contorno_neg in self.contornos_negativos:
-            contorno_neg.desplazar_sistema_de_referencia(desp_x=-self.xg, desp_y=-self.yg)
+    def shift_coordinate_origin_to_centroid(self):
+        for element in self.elements_list:
+            element.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
+        for region_pos in self.solid_regions_list:
+            region_pos.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
+        for void_region in self.void_regions_list:
+            void_region.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
 
-    def obtener_valores_extremos(self):
-        return min(x.xg for x in self.elementos), max(x.xg for x in self.elementos), min(x.yg for x in self.elementos), max(x.yg for x in self.elementos)
+    def get_boundary_box_extremes(self):
+        return min(x.xg for x in self.elements_list), max(x.xg for x in self.elements_list), min(x.yg for x in self.elements_list), max(x.yg for x in self.elements_list)
 
     def plotly(self, fig, planos_de_carga):
         plotly_util = ACSAHEPlotlyEngine(fig=fig)
