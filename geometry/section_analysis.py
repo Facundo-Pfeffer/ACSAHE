@@ -1,4 +1,3 @@
-import os
 import traceback
 from tkinter import messagebox
 
@@ -10,8 +9,8 @@ from scipy.optimize import fsolve
 
 from materials.acero_pasivo import BarraAceroPasivo
 from materials.acero_pretensado import BarraAceroPretensado
-from build.utils.excel_manager import ExcelManager, ExcelSheetManager
-from geometry.section_geometry_engine import Node, Region, ArbitraryCrossSection, Segment, CircularRegion
+from build.utils.excel_manager import ExcelManager
+from geometry.section_geometry_engine import Node, Region, ArbitraryCrossSection, CircularRegion
 from materials.hormigon import Hormigon
 from materials.matrices import MatrizAceroPasivo, MatrizAceroActivo
 from build.utils.plotly_engine import ACSAHEPlotlyEngine

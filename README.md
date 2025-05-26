@@ -1,5 +1,8 @@
 # ACSAHE: Automatización del Cálculo de la Resistencia de Secciones Arbitrarias de Hormigón Estructural.
+[![language](https://img.shields.io/badge/language-Python-239120)](https://img.shields.io/badge/Python-) 
 
+
+<img src="build/images/COMPLETE LOGO - README.png" align="right" alt="Logo ACSAHE" width="178" height="178">
 ACSAHE es un programa dedicado a la elaboración de Diagramas de Interacción Momento-Normal para secciones arbitrarias de hormigón estructural, basado en la reglamentación CIRSOC 201 de la República Argentina.
 
 Fue desarrollado por Facundo L. Pfeffer en conjunto con el Dr. Ing. Oscar Möller en el Instituto de Mecánica Aplicada y Estructuas (IMAE) de la de la Universidad Nacional de Rosario.
@@ -16,8 +19,10 @@ Los pasos para la instalación son:
 
 
 #### 👜Versión Portable
-Esta versión el programa se corre desde la planilla con un archivo macro.  
-Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado.  **Enlace de descarga:** https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
+La versión original del programa para los viejos usuarios. 
+
+Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado.  **Enlace de descarga:**
+https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
 ## Tutoriales en Canal de Youtube
 Para lograr un mejor entendimiento por los usuarios y aprendizaje del software, se ha creado un canal de YouTube en el cual se adicionaran progresivamente tutoriales explicativos.  https://www.youtube.com/playlist?list=PL2vqHDQzjyupe7ISb2vA9EGn0Qr31nW7g
 ## 💻 Featured YouTube Videos

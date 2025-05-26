@@ -11,13 +11,12 @@ from gui.gui_utils import *
 
 class ACSAHEUserInterface(QMainWindow):
     def __init__(self):
+        self.acsahe_instance = None
         super().__init__()
 
     def launch_acsahe(self):
-        from acsahe import ACSAHE
         file_path = self.main_excel_file_path_list[0]
         file_name = os.path.basename(file_path)
-
         self.acsahe_instance = ACSAHE(
             app_gui=self,
             input_file_name=file_name,
@@ -120,21 +119,12 @@ class ACSAHEUserInterface(QMainWindow):
         self.setWindowIcon(QIcon("build/images/Logo H.webp"))
         self.center()
 
-    def create_logo(self):
-        self.logoLabel = QLabel()
-        logo_path = "build/images/LOGO ACSAHE.webp"
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.logoLabel.setPixmap(pixmap)
-        self.logoLabel.setAlignment(Qt.AlignCenter)
-        return self.logoLabel
-
-    def create_excel_selector(self, font):
-        self.main_excel_button = QPushButton("📁 Seleccionar archivo(s) Excel")
-        self.main_excel_button.setFont(font)
-        self.main_excel_button.setIcon(QIcon())  # Reset icon when default text is used
-        self.main_excel_button.clicked.connect(self.select_excel_file)
-        return self.main_excel_button
+    def create_progress_bar(self, font):
+        self.progress = QProgressBar(self)
+        self.progress.setVisible(False)
+        self.progress.setFont(font)
+        self._set_progress_bar_style()
+        return self.progress
 
     def create_process_button(self, font):
         label_execute = "Ejecutar ACSAHE"
@@ -151,22 +141,15 @@ class ACSAHEUserInterface(QMainWindow):
         self.message_label.setAlignment(Qt.AlignCenter)
         return self.message_label
 
-    def create_progress_bar(self, font):
-        self.progress = QProgressBar(self)
-        self.progress.setVisible(False)
-        self.progress.setFont(font)
-        self.estilo_barra_progreso()
-        return self.progress
+    def _set_progress_bar_style(self):
+        with open("build/style/progress_bar.qss", "r", encoding="utf-8") as file:
+            self.progress.setStyleSheet(file.read())
 
     def center(self):
         qr = self.frameGeometry()
         cp = QApplication.desktop().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
-
-    def estilo_barra_progreso(self):
-        with open("build/style/progress_bar.qss", "r", encoding="utf-8") as file:
-            self.progress.setStyleSheet(file.read())
 
     def select_excel_file(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar archivo(s) Excel", "",
@@ -251,12 +234,6 @@ class ACSAHEUserInterface(QMainWindow):
         self.progress.setValue(value)
         self.progress.repaint()
         QApplication.processEvents()
-
-    def focus_window(self):
-        if self.isMinimized():
-            self.showNormal()
-        self.raise_()
-        self.activateWindow()
 
     def _get_config_path(self):
         settings_dir = Path("build/user_settings")
@@ -360,9 +337,8 @@ class ACSAHEUserInterface(QMainWindow):
             from shutil import copyfile
             copyfile("build/ACSAHE.xlsm", save_path)
 
-            # Initialize list if empty
             if not hasattr(self, "main_excel_file_path_list") or not isinstance(self.main_excel_file_path_list, list):
-                self.main_excel_file_path_list = []
+                self.main_excel_file_path_list = [] # Initialize if empty
 
             # Append and deduplicate
             if save_path not in self.main_excel_file_path_list:
@@ -375,6 +351,14 @@ class ACSAHEUserInterface(QMainWindow):
             if os.path.exists(icon_path):
                 self.main_excel_button.setIcon(QIcon(icon_path))
 
+class GuiWrapper:
+    def __init__(self, gui, signal):
+        self.gui = gui
+        self.signal = signal
+
+    def update_ui(self, message=None, value=None):
+        self.signal.emit(message, value)
+        QTimer.singleShot(0, QApplication.processEvents)
 
 class ACSAHEWorker(QObject):
     finished = pyqtSignal()
@@ -399,22 +383,19 @@ class ACSAHEWorker(QObject):
         self.gui.activateWindow()  # Makes the window the active window
 
     def run(self):
-        class GuiWrapper:
-            def __init__(self, gui, signal):
-                self.gui = gui
-                self.signal = signal
-
-            def update_ui(self, message=None, value=None):
-                self.signal.emit(message, value)
-                QTimer.singleShot(0, QApplication.processEvents)  # optional: process events right away
-
-        wrapped_gui = GuiWrapper(self.gui, self.progress)
-        ACSAHE(
-            app_gui=wrapped_gui,
-            input_file_name=self.input_file_name,
-            path_to_input_file=self.path_to_input_file,
-            html_folder_path=self.html_folder_path if hasattr(self, "html_folder_path") else None,
-            excel_folder_path=self.excel_folder_path,
-            docx_folder_path=self.docx_folder_path
-        )
-        self.finished.emit()
+        try:
+            wrapped_gui = GuiWrapper(self.gui, self.progress)
+            ACSAHE(
+                app_gui=wrapped_gui,
+                input_file_name=self.input_file_name,
+                path_to_input_file=self.path_to_input_file,
+                html_folder_path=self.html_folder_path if hasattr(self, "html_folder_path") else None,
+                excel_folder_path=self.excel_folder_path,
+                docx_folder_path=self.docx_folder_path
+            )
+        except Exception as e:
+            from tkinter import messagebox
+            messagebox.showinfo("Error", str(e))
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
