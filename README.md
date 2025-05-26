@@ -1,5 +1,7 @@
 # ACSAHE: Automatización del Cálculo de la Resistencia de Secciones Arbitrarias de Hormigón Estructural.
-[![language](https://img.shields.io/badge/language-Python-239120)](https://img.shields.io/badge/Python-) 
+![GitHub release](https://img.shields.io/github/v/release/Facundo-Pfeffer/ACSAHE?sort=semver&display_name=tag&labelColor=grey&color=blue&link=https%3A%2F%2Fgithub.com%2FFacundo-Pfeffer%2FACSAHE%2Freleases)
+![language](https://img.shields.io/badge/language-Python-239120)
+![University](https://img.shields.io/github/last-commit/Facundo-Pfeffer/ACSAHE?color=white)
 
 
 <img src="build/images/COMPLETE LOGO - README.png" align="right" alt="Logo ACSAHE" width="178" height="178">
