@@ -4,27 +4,22 @@ from docx.shared import Pt, RGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-import plotly.io as pio
 import os
 
+import plotly.io as pio
 
-def configure_orca_path():
-    """
-    Dynamically sets the path to orca.exe depending on environment.
-    """
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from plotly.graph_objs import Figure
 
-    # Adjust this path based on your structure
-    orca_relative_path = os.path.join('build', 'orca', 'orca.exe')
+import uuid
+import tempfile
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
-    # Ensure absolute path
-    orca_executable = os.path.abspath(orca_relative_path)
-
-    # Configure plotly to use this orca
-    pio.orca.config.executable = orca_executable
-
-    # Optional: confirm path
-    if not os.path.exists(orca_executable):
-        raise FileNotFoundError(f"Orca executable not found at {orca_executable}")
 
 
 class DocxReportUtils:
@@ -89,7 +84,7 @@ class DocxReportUtils:
             borders_list.append(modified_border)
             tcPr.append(borders_list)
 
-    def insert_image(self, placeholder: str, plotly_fig, width_px=1200, height_px=800):
+    def insert_image(self, placeholder: str, plotly_fig, width_px=1200, height_px=1000):
         import tempfile
         import uuid
 
@@ -108,10 +103,9 @@ class DocxReportUtils:
                 for fig in figures:
                     temp_dir = tempfile.gettempdir()
                     temp_img_path = os.path.join(temp_dir, f"{uuid.uuid4()}.png")
+                    # fig.update_layout(margin=dict(l=20, r=20, t=40, b=40))
 
-                    # Export each figure
-                    fig.update_layout(margin=dict(l=20, r=20, t=40, b=40))
-                    fig.write_image(temp_img_path, engine="orca", width=width_px, height=height_px)
+                    temp_img_path = self.export_fig_as_png_from_html(fig, width_px=width_px, height_px=height_px, output_path=temp_img_path)
 
                     # Insert image
                     run = para.add_run()
@@ -123,7 +117,6 @@ class DocxReportUtils:
 
                     os.remove(temp_img_path)
                 break
-
     @staticmethod
     def get_unique_filename(path):
         """
@@ -190,3 +183,63 @@ class DocxReportUtils:
 
 
 
+    @staticmethod
+    def export_fig_as_png_from_html(fig: Figure, width_px: int = 150, height_px: int = 150, output_path: str = None) -> str:
+        """
+        Renders a Plotly figure to HTML, opens it headlessly in Chrome, and exports it as a PNG.
+        TODO:
+            - Replace this method with Plotly's `to_image()` if Kaleido becomes stable
+              in newer Plotly versions and configuration. Current versions: Plotly 6.1.2 and Kaleido 0.2.1.
+
+        """
+
+        html_str = pio.to_html(fig, include_plotlyjs='cdn')
+        html_str = html_str.replace(
+            "</head>",
+            """
+            <style>
+                body { margin: 0; overflow: hidden; }
+            </style>
+            </head>
+            """
+        )
+
+        temp_dir = tempfile.gettempdir()
+        html_path = os.path.join(temp_dir, f"{uuid.uuid4()}.html")
+
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_str)
+
+        # Set up headless Chrome with correct service usage
+        options = Options()
+        options.add_argument("--headless=new")
+        options.add_argument("--disable-gpu")
+        # options.add_argument(f"--window-size={width_px},{height_px}")
+
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+
+        # Force exact viewport - guarantees pixel-perfect screenshots
+        driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "mobile": False,
+            "width": width_px,
+            "height": height_px,
+            "deviceScaleFactor": 1,
+        })
+
+        driver.set_window_size(width_px, height_px)
+        try:
+            driver.get("file://" + html_path)
+
+            # Wait until Plotly's main SVG is rendered
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "main-svg"))
+            )
+
+            driver.save_screenshot(output_path)
+        finally:
+            if os.path.exists(html_path):
+                os.remove(html_path)
+            driver.quit()
+
+        return output_path

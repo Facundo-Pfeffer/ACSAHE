@@ -148,6 +148,7 @@ class ACSAHE:
                     QApplication.processEvents()
             self.geometric_solution.excel_manager.close()
         except Exception as e:
+            self.update_ui(f"ERROR: {e}!", progress_bar_value=100)
             traceback.print_exc()
             if hasattr(self, "geometric_solution"):
                 self.geometric_solution.excel_manager.close()

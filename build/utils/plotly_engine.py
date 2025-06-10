@@ -31,7 +31,7 @@ class ACSAHEPlotlyEngine(object):
         )
         return fig
 
-    def plot_positive_polygon(self, element, color, espesor, transparencia, negative_shapes_list=None):
+    def plot_positive_polygon(self, element, color, thickness, transparencia, negative_shapes_list=None):
         negative_shapes_list = [] if negative_shapes_list is None else negative_shapes_list
         negative_polygons_list = [shape for shape in negative_shapes_list if shape.tipo != "Circular"]
         x_border_segment_list = []
@@ -46,7 +46,7 @@ class ACSAHEPlotlyEngine(object):
                 x=x_border_segment_list[index], y=y_border_segment_list[index],
                 showlegend=False,
                 opacity=transparencia,
-                line=dict(width=espesor),
+                line=dict(width=thickness),
                 hoverinfo='skip',
                 marker=dict(
                     size=0.1,
@@ -54,7 +54,7 @@ class ACSAHEPlotlyEngine(object):
                 )))
 
     def plot_negative_polygon(
-            self, element, color, espesor, transparencia, positive_polygons_list, negative_polygons_list):
+            self, element, color, thickness, transparencia, positive_polygons_list, negative_polygons_list):
 
         uncleaned_segment_list = []
 
@@ -83,7 +83,7 @@ class ACSAHEPlotlyEngine(object):
                 x=x_borde[index], y=y_borde[index],
                 showlegend=False,
                 opacity=transparencia,
-                line=dict(width=espesor),
+                line=dict(width=thickness),
                 hoverinfo='skip',
                 marker=dict(
                     size=0.1,
@@ -123,7 +123,7 @@ class ACSAHEPlotlyEngine(object):
         color = "Grey"
         for region in seccion.solid_regions_list:
             if region.tipo == "Poligonal":
-                self.plot_positive_polygon(region, color=color, transparencia=1, espesor=3,
+                self.plot_positive_polygon(region, color=color, transparencia=1, thickness=3,
                                            negative_shapes_list=seccion.void_regions_list)
             else:
                 self.plot_annular_sector(region,
@@ -133,7 +133,7 @@ class ACSAHEPlotlyEngine(object):
         for region in seccion.void_regions_list:
             if region.tipo == "Poligonal":
                 self.plot_negative_polygon(
-                    region, color=color, transparencia=1, espesor=4,
+                    region, color=color, transparencia=1, thickness=4,
                     positive_polygons_list=seccion.solid_regions_list,
                     negative_polygons_list=seccion.void_regions_list)
             else:
@@ -145,7 +145,7 @@ class ACSAHEPlotlyEngine(object):
         y_centroide = []
         for element in seccion.elements_list:
             if element.tipo == "Poligonal":
-                self.plot_positive_polygon(element, color=color, transparencia=0.2, espesor=1)
+                self.plot_positive_polygon(element, color=color, transparencia=0.2, thickness=1)
             else:
                 self.plot_annular_sector(element,
                                          arc_division=100,

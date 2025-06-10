@@ -4,9 +4,8 @@ from tkinter import messagebox
 from PyQt5.QtWidgets import QApplication
 
 from gui.gui_launcher import ACSAHEUserInterface
-from report.report_utils import configure_orca_path
 
-configure_orca_path()
+
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
