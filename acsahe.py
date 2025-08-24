@@ -40,7 +40,9 @@ class ACSAHE:
         self.pdf_folder_path = docx_folder_path
         self.generate_excel = bool(excel_folder_path)
         self.excel_folder_path = excel_folder_path
+
         self.geometric_solution = None
+
         self.plotly_data_subsets = {}
         self.plotly_engine = ACSAHEPlotlyEngine()
 

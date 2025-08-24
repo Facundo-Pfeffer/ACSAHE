@@ -399,6 +399,7 @@ class ACSAHEPlotlyEngine(object):
             excel_path = self._save_sheets_with_names(args_2d_list, excel_result_path, template_path)
         return fig_interactive, fig_2d_list
 
+
     def _save_sheets_with_names(self, args_2d_list, output_path, template_path):
         create_workbook_from_template(template_path=template_path, target_path=output_path,
                                       sheet_name=f"λ={args_2d_list[0]['lambda_angle']}°")
@@ -506,7 +507,7 @@ class ACSAHEPlotlyEngine(object):
     def _load_static_assets(self, project_path: Path) -> Dict[str, Any]:
         html_dir = project_path / "build" / "html"
         assets_dir = html_dir / "assets"
-        icon_path = project_path / "build" / "images" / "Logo_H.ico"
+        icon_path = project_path / "build" / "gui" / "images" / "Logo_H.ico"
 
         return {
             "template": self._read_text_file(html_dir / "result_format.html"),

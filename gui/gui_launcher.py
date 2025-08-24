@@ -110,7 +110,7 @@ class ACSAHEUserInterface(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        self.setStyleSheet(load_stylesheet("build/style/acsahe.qss"))
+        self.setStyleSheet(load_stylesheet("build/gui/style/acsahe.qss"))
         self.show()
         self._load_user_settings()
 
@@ -144,11 +144,11 @@ class ACSAHEUserInterface(QMainWindow):
 
     @staticmethod
     def validate_path(file_path):
-        if not os.path.exists(f"{file_path}/build/style/progress_bar"):
+        if not os.path.exists(f"{file_path}/build/gui/style/progress_bar"):
             raise RuntimeError("Error en la búsqueda de paths/r, asegurese de no borrar los contenidos en ")
 
     def _set_progress_bar_style(self):
-        with open("build/style/progress_bar.qss", "r", encoding="utf-8") as file:
+        with open("build/gui/style/progress_bar.qss", "r", encoding="utf-8") as file:
             self.progress.setStyleSheet(file.read())
 
     def center(self):

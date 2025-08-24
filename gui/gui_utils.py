@@ -9,7 +9,7 @@ DEFAULT_MARGINS = (0, 0, 0, 0)
 DEFAULT_FONT = QFont("Lato", 10)
 
 
-def load_stylesheet(path="build/style/acsahe.qss") -> str:
+def load_stylesheet(path="build/gui/style/acsahe.qss") -> str:
     """
     Loads and returns the stylesheet content from a QSS file.
 
