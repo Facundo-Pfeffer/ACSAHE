@@ -162,7 +162,7 @@ class Segment(object):
         plotly_util = ACSAHEPlotlyEngine()
         plotly_util.plotly_segment(self.start_node, self.end_node, **kwargs)
 
-    def segment_vectors_share_orientation(self, other_segment):
+    def do_segment_vectors_share_orientation(self, other_segment) -> True:
         if not(self & other_segment is None):
             print("Segments are not parallel hence they can't share orientation")
             return False
@@ -193,7 +193,7 @@ class Segment(object):
         """Returns the resulting segment(s) when deleting the parts of self that belong to other_segment"""
         if not(self.is_parallel_to_segment_and_shares_range(other_segment)):
             return [self]
-        if not self.segment_vectors_share_orientation(other_segment):
+        if not self.do_segment_vectors_share_orientation(other_segment):
             equivalent_segment = Segment(other_segment.end_node, other_segment.start_node)
         else:
             equivalent_segment = other_segment
@@ -231,7 +231,7 @@ class Polygon(object):
     """CONVEX polygon in the plane, formed by a series of nodes."""
     tipo = "Poligonal"
 
-    def __init__(self, nodes: List[Node], sort_nodes: bool = False):
+    def __init__(self, nodes: (list, tuple), sort_nodes: bool = False):
         """
         :param nodes: list of nodes that define the polygon's contour.
         :param sort_nodes: Defines if the previous list of nodes should be sorted counterclockwise, being this
@@ -389,21 +389,20 @@ class Polygon(object):
 
         internal_polygon = Polygon(intersection_nodes_list, sort_nodes=True)
 
-        if self.area_y_centro_son_iguales(poligono_1=self, poligono_2=internal_polygon):
-            # If the intersection equals self, it will be removed.
+        if self == internal_polygon:
             return None
 
-        nueva_area = self.area - internal_polygon.area
-        nueva_x = (self.area * self.xg - internal_polygon.area * internal_polygon.xg) / nueva_area
-        nueva_y = (self.area * self.yg - internal_polygon.area * internal_polygon.yg) / nueva_area
+        new_area = self.area - internal_polygon.area
+        new_x = (self.area * self.xg - internal_polygon.area * internal_polygon.xg) / new_area
+        new_y = (self.area * self.yg - internal_polygon.area * internal_polygon.yg) / new_area
 
-        if not self._is_new_polygon_valid(nueva_area, nueva_x, nueva_y):
+        if not self._is_new_polygon_valid(new_area, new_x, new_y):
             return None
         self.modifications_count = self.modifications_count + 1
 
-        self.area = nueva_area
-        self.xg, self.yg = nueva_x, nueva_y
-        self.centroid_node = Node(nueva_x, nueva_y)
+        self.area = new_area
+        self.xg, self.yg = new_x, new_y
+        self.centroid_node = Node(new_x, new_y)
         self.intersection_nodes_list = intersection_nodes_list + self.intersection_nodes_list
         return self  # self modificado
 
@@ -460,44 +459,43 @@ class Polygon(object):
             return True if not intersecciones else False
         return True
 
-    @staticmethod
-    def area_y_centro_son_iguales(poligono_1, poligono_2):
+    def __eq__(self, other_polygon):
         """Valida si dos polígonos son iguales"""
-        return poligono_2.area - TOLERANCE <= poligono_1.area <= poligono_2.area + TOLERANCE and \
-            poligono_2.xg - TOLERANCE <= poligono_1.xg <= poligono_2.xg + TOLERANCE and \
-            poligono_2.yg - TOLERANCE <= poligono_1.yg <= poligono_2.yg + TOLERANCE
+        return other_polygon.area - TOLERANCE <= self.area <= other_polygon.area + TOLERANCE and \
+            other_polygon.xg - TOLERANCE <= self.xg <= other_polygon.xg + TOLERANCE and \
+            other_polygon.yg - TOLERANCE <= self.yg <= other_polygon.yg + TOLERANCE
 
-    def translate_reference_frame(self, desp_x, desp_y):
-        self.xg = self.xg + desp_x
-        self.yg = self.yg + desp_y
+    def translate_reference_frame(self, disp_x, disp_y):
+        self.xg = self.xg + disp_x
+        self.yg = self.yg + disp_y
         for nodo_extremo in self.boundary_nodes_list:
-            nodo_extremo.x = nodo_extremo.x + desp_x
-            nodo_extremo.y = nodo_extremo.y + desp_y
+            nodo_extremo.x = nodo_extremo.x + disp_x
+            nodo_extremo.y = nodo_extremo.y + disp_y
         self.boundary_segments_list = self._get_boundary_segments()
 
 
 class RectangularElement(Polygon):
     """A rectangular finite element. It inherits the properties of a Polygon."""
 
-    def __init__(self, ubicacion_centro: Node, medidas: tuple):
-        a, b = medidas
-        self.lado_x, self.lado_y = a, b
-        self.x_centro = ubicacion_centro.x
-        self.y_centro = ubicacion_centro.y
-        self.ubicacion_centro = ubicacion_centro
-        self.medidas = medidas
-        self.perimetro = 2 * a + 2 * b
-        super().__init__(self.obtener_boundary_nodes_list())
+    def __init__(self, center_location: Node, sides_length_tuple: tuple):
+        a, b = sides_length_tuple
+        self.x_length, self.y_length = a, b
+        self.x_centroid = center_location.x
+        self.y_centroid = center_location.y
+        self.center_location = center_location
+        self.side_lengths = sides_length_tuple
+        self.perimeter = 2 * a + 2 * b
+        super().__init__(self._get_boundary_nodes_list())
 
     def _get_polygon_area(self):
-        return self.lado_x * self.lado_y
+        return self.x_length * self.y_length
 
     def _get_centroid_node(self):
-        return self.ubicacion_centro
+        return self.center_location
 
-    def obtener_boundary_nodes_list(self):
-        x, y = self.x_centro, self.y_centro
-        a, b = self.lado_x, self.lado_y
+    def _get_boundary_nodes_list(self):
+        x, y = self.x_centroid, self.y_centroid
+        a, b = self.x_length, self.y_length
         return Node(x + a / 2, y + b / 2), Node(x + a / 2, y - b / 2), Node(x - a / 2, y - b / 2), Node(x - a / 2,
                                                                                                         y + b / 2)
 
@@ -515,7 +513,7 @@ class AnnularSectorElement(object):
 
     def __init__(self, centroid_node: Node, boundary_radii_list: tuple, boundary_angles_list):
         self.area = math.radians(boundary_angles_list[1] - boundary_angles_list[0]) * (boundary_radii_list[1] ** 2 - boundary_radii_list[0] ** 2) / 2
-        angulo_medio = math.radians(boundary_angles_list[1] + boundary_angles_list[0]) / 2
+        middle_angle = math.radians(boundary_angles_list[1] + boundary_angles_list[0]) / 2
 
         self.start_angle, self.end_angle = min(boundary_angles_list), max(boundary_angles_list)
         self.internal_radius, self.external_radius = min(boundary_radii_list), max(boundary_radii_list)
@@ -531,8 +529,8 @@ class AnnularSectorElement(object):
         internal_area = math.radians(self.end_angle - self.start_angle) * (self.internal_radius ** 2) / 2
         centroid_radius = 2 * math.sin(theta) / (3 * theta) * (
                 self.external_radius * external_area - self.internal_radius * internal_area) / self.area
-        self.xg = math.cos(angulo_medio) * centroid_radius + self.xc
-        self.yg = math.sin(angulo_medio) * centroid_radius + self.yc
+        self.xg = math.cos(middle_angle) * centroid_radius + self.xc
+        self.yg = math.sin(middle_angle) * centroid_radius + self.yc
         self.centroid_node = Node(self.xg, self.yg)
 
         self.boundary_nodes_list = self._get_boundary_nodes_list()
@@ -563,20 +561,19 @@ class AnnularSectorElement(object):
         radio = math.sqrt(xc ** 2 + yc ** 2)
         return self.start_angle <= angulo <= self.end_angle and self.internal_radius <= radio <= self.external_radius
 
-    def translate_reference_frame(self, desp_x, desp_y):
-        self.xg += desp_x
-        self.xc += desp_x
-        self.yg += desp_y
-        self.yc += desp_y
-        self.centroid_node.x += desp_x
-        self.centroid_node.y += desp_y
+    def translate_reference_frame(self, disp_x, disp_y):
+        self.xg += disp_x
+        self.xc += disp_x
+        self.yg += disp_y
+        self.yc += disp_y
+        self.centroid_node.x += disp_x
+        self.centroid_node.y += disp_y
         self.boundary_nodes_list = self._get_boundary_nodes_list()
         self.boundary_straight_segments_list = self._get_straight_boundary_segments_list()
 
     def is_node_in_element(self, region):
-        """Determina si self está contenido dentro de polígono mayor"""
+        """Determines if this polygon is contained within a larger polygon."""
         return region.is_node_inside_boundaries(self.centroid_node)
-
 
 class CircularRegion(AnnularSectorElement):
     tipo = "Circular"
@@ -585,48 +582,49 @@ class CircularRegion(AnnularSectorElement):
         self.sign = sign
         super().__init__(centroid_node, boundary_radii_list, boundary_angles_list)
 
-    def generate_mesh(self, discretizacion_angulo, discretizacion_radio):
+    def generate_mesh(self, angle_discretization, radius_discretization):
         """Define la lista de elements_list tipo ElementoRectangular que se encuentran dentro del region."""
-        n = discretizacion_radio
-        funcion_radii = lambda i: self.internal_radius + (self.external_radius - self.internal_radius) * (
+        finite_element_list = []
+
+        n = radius_discretization
+        radii_function = lambda i: self.internal_radius + (self.external_radius - self.internal_radius) * (
                 1 - (1 - i / n) ** 1.25)
 
-        resultado = []
-        radio = self.internal_radius
-        radio_final = funcion_radii(1)
+        initial_radii = self.internal_radius
+        final_radii = radii_function(1)
         i_inicial = 0
 
         if self.internal_radius == 0:  # Sector central circular
-            resultado.append(AnnularSectorElement(
+            finite_element_list.append(AnnularSectorElement(
                 centroid_node=self.centroid_node,
                 boundary_angles_list=(self.start_angle, self.end_angle),
-                boundary_radii_list=(radio, radio_final / 2)))
-            angulo = self.start_angle
-            while angulo <= self.end_angle - discretizacion_angulo:
-                resultado.append(AnnularSectorElement(
+                boundary_radii_list=(initial_radii, final_radii / 2)))
+            start_angle = self.start_angle
+            while start_angle <= self.end_angle - angle_discretization:
+                finite_element_list.append(AnnularSectorElement(
                     centroid_node=self.centroid_node,
-                    boundary_angles_list=(angulo, angulo + discretizacion_angulo),
-                    boundary_radii_list=(radio_final / 2, radio_final)))
-                angulo = angulo + discretizacion_angulo
+                    boundary_angles_list=(start_angle, start_angle + angle_discretization),
+                    boundary_radii_list=(final_radii / 2, final_radii)))
+                start_angle = start_angle + angle_discretization
             i_inicial = i_inicial + 1
 
         for i_radii in range(i_inicial, n):
-            radio = funcion_radii(i_radii)
-            radio_final = funcion_radii(i_radii + 1)
-            angulo = self.start_angle
-            while angulo <= self.end_angle - discretizacion_angulo:
-                resultado.append(AnnularSectorElement(
+            initial_radii = radii_function(i_radii)
+            final_radii = radii_function(i_radii + 1)
+            start_angle = self.start_angle
+            while start_angle <= self.end_angle - angle_discretization:
+                finite_element_list.append(AnnularSectorElement(
                     centroid_node=self.centroid_node,
-                    boundary_angles_list=(angulo, angulo + discretizacion_angulo),
-                    boundary_radii_list=(radio, radio_final)))
-                angulo = angulo + discretizacion_angulo
-        return resultado
+                    boundary_angles_list=(start_angle, start_angle + angle_discretization),
+                    boundary_radii_list=(initial_radii, final_radii)))
+                start_angle = start_angle + angle_discretization
+        return finite_element_list
 
     def remove_outside_elements(self, elements_list):
         """Remove elements that lay outside the Polygon limits."""
-        for elemento_diferencial in elements_list.copy():
-            if not self.is_node_in_annular_sector(elemento_diferencial.centroid_node):  # Fuera del semiplano del region.
-                elements_list.remove(elemento_diferencial)
+        for finite_element in elements_list.copy():
+            if not self.is_node_in_annular_sector(finite_element.centroid_node):  # Outside the region semi-plane.
+                elements_list.remove(finite_element)
         return elements_list
 
     def is_node_inside_boundaries(self, nodo: Node):
@@ -676,7 +674,7 @@ class Region(Polygon):
         y = y_partida
         while y_condition(y):
             while x_condition(x):
-                rectandultar_element = RectangularElement(ubicacion_centro=Node(x, y), medidas=(dx, dy))
+                rectandultar_element = RectangularElement(center_location=Node(x, y), sides_length_tuple=(dx, dy))
                 rectandultar_element = rectandultar_element.get_intersection_polygon(self)  # Trimming boundaries
                 elements_list.append(rectandultar_element)
                 x = x + direction[0] * dx
@@ -721,8 +719,8 @@ class ArbitraryCrossSection(object):
             if solid_regions.tipo == "Poligonal":
                 lista_elements_list_positivos = solid_regions.generate_mesh(self.dx, self.dy)
             else:  # Circular
-                lista_elements_list_positivos = solid_regions.generate_mesh(discretizacion_angulo=self.d_ang,
-                                                                                   discretizacion_radio=self.dr)
+                lista_elements_list_positivos = solid_regions.generate_mesh(angle_discretization=self.d_ang,
+                                                                            radius_discretization=self.dr)
             for solid_element in lista_elements_list_positivos:
                 if self.is_element_in_negative_region(
                         solid_element) or solid_element.area < TOLERANCE:
@@ -769,11 +767,11 @@ class ArbitraryCrossSection(object):
 
     def shift_coordinate_origin_to_centroid(self):
         for element in self.elements_list:
-            element.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
+            element.translate_reference_frame(disp_x=-self.xg, disp_y=-self.yg)
         for region_pos in self.solid_regions_list:
-            region_pos.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
+            region_pos.translate_reference_frame(disp_x=-self.xg, disp_y=-self.yg)
         for void_region in self.void_regions_list:
-            void_region.translate_reference_frame(desp_x=-self.xg, desp_y=-self.yg)
+            void_region.translate_reference_frame(disp_x=-self.xg, disp_y=-self.yg)
 
     def get_boundary_box_extremes(self):
         return min(x.xg for x in self.elements_list), max(x.xg for x in self.elements_list), min(x.yg for x in self.elements_list), max(x.yg for x in self.elements_list)

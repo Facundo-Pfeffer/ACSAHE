@@ -137,9 +137,8 @@ class ACSAHEPlotlyEngine(object):
                     positive_polygons_list=seccion.solid_regions_list,
                     negative_polygons_list=seccion.void_regions_list)
             else:
-                self.plot_annular_sector(region,
-                                         arc_division=150,
-                                         color=color, transparency=1, thickness=4)
+                self.plot_annular_sector(
+                    region,arc_division=150, color=color, transparency=1, thickness=4)
 
         x_centroide = []
         y_centroide = []
@@ -537,7 +536,7 @@ class ACSAHEPlotlyEngine(object):
                 include_plotlyjs='cdn',
                 config=self.get_fig_html_config(f"ACSAHE - Resultado {gs.problema['tipo']}")
             ),
-            "foto_logo": f"{project_path}/build/images/LOGO%20ACSAHE.webp",
+            "foto_logo": f"{project_path}/build/gui/images/LOGO%20ACSAHE.webp",
             "excel_result_template": f"{project_path}/build/EXCEL result template.xlsx"
         }
 

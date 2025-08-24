@@ -16,6 +16,7 @@ class ACSAHEUserInterface(QMainWindow):
 
     def launch_acsahe(self):
         file_path = self.main_excel_file_path_list[0]
+        self.validate_path(file_path)
         file_name = os.path.basename(file_path)
         self.acsahe_instance = ACSAHE(
             app_gui=self,
@@ -94,7 +95,7 @@ class ACSAHEUserInterface(QMainWindow):
 
         main_layout = create_main_layout_with_logo_and_controls(
             logo_widget=create_logo_section(
-                logo_path="build/images/LOGO ACSAHE.webp",
+                logo_path="build/gui/images/LOGO ACSAHE.webp",
                 logo_size=280,
                 below_text_html=(
                     "Creado por el Ing. Facundo Pfeffer & el Dr. Ing. Oscar Möller.<br>"
@@ -116,7 +117,7 @@ class ACSAHEUserInterface(QMainWindow):
     def setup_window(self):
         self.setWindowTitle("ACSAHE")
         self.resize(900, 300)
-        self.setWindowIcon(QIcon("build/images/Logo H.webp"))
+        self.setWindowIcon(QIcon("build/gui/images/Logo H.webp"))
         self.center()
 
     def create_progress_bar(self, font):
@@ -141,6 +142,11 @@ class ACSAHEUserInterface(QMainWindow):
         self.message_label.setAlignment(Qt.AlignCenter)
         return self.message_label
 
+    @staticmethod
+    def validate_path(file_path):
+        if not os.path.exists(f"{file_path}/build/style/progress_bar"):
+            raise RuntimeError("Error en la búsqueda de paths/r, asegurese de no borrar los contenidos en ")
+
     def _set_progress_bar_style(self):
         with open("build/style/progress_bar.qss", "r", encoding="utf-8") as file:
             self.progress.setStyleSheet(file.read())
@@ -157,7 +163,7 @@ class ACSAHEUserInterface(QMainWindow):
         if files:
             self.main_excel_file_path_list = files
             display_names = ', '.join([os.path.basename(f) for f in files])
-            icon_path = "build/icons/excel_icon.png"
+            icon_path = "build/gui/icons/excel_icon.png"
             if os.path.exists(icon_path):
                 self.main_excel_button.setIcon(QIcon(icon_path))
             self.main_excel_button.setText(f" {display_names}")
@@ -251,7 +257,7 @@ class ACSAHEUserInterface(QMainWindow):
                 if self.main_excel_file_path_list and all(Path(f).exists() for f in self.main_excel_file_path_list):
                     display_names = ', '.join([os.path.basename(f) for f in self.main_excel_file_path_list])
                     self.main_excel_button.setText(f"  {display_names}")
-                icon_path = "build/icons/excel_icon.png"
+                icon_path = "build/gui/icons/excel_icon.png"
                 if os.path.exists(icon_path):
                     self.main_excel_button.setIcon(QIcon(icon_path))
 
@@ -347,7 +353,7 @@ class ACSAHEUserInterface(QMainWindow):
             display_names = ', '.join([os.path.basename(f) for f in self.main_excel_file_path_list])
             self.main_excel_button.setText(f" {display_names}")
 
-            icon_path = "build/icons/excel_icon.png"
+            icon_path = "build/gui/icons/excel_icon.png"
             if os.path.exists(icon_path):
                 self.main_excel_button.setIcon(QIcon(icon_path))
 

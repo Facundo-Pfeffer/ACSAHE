@@ -96,7 +96,7 @@ def create_select_file_row(
     font: QFont = QFont("Lato", 10),
     include_reset: bool = False,
     reset_tooltip: str = "Restablecer selección",
-    reset_icon_path: str = "build/icons/restablish_icon_15px.png",
+    reset_icon_path: str = "build/gui/icons/restablish_icon_15px.png",
     on_main_click: callable = None,
     on_reset_click: callable = None,
     spacing: int = 8
@@ -151,7 +151,7 @@ def create_checkbox_folder_row(
     on_checkbox_toggle: callable = None,
     on_button_click: callable = None,
     font: QFont = QFont("Lato", 10),
-    icon_path: str = "build/icons/information_icon_15px_b.png",
+    icon_path: str = "build/gui/icons/information_icon_15px_b.png",
     icon_size: int = 15,
     spacing: int = 8,
     button_alignment: Qt.Alignment = Qt.AlignRight,

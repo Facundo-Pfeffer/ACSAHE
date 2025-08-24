@@ -21,9 +21,9 @@ def show_message(message, titulo="Mensaje"):
 
 
 class ACSAHEGeometricSolution:
-    #  Cantidades de partes en las cuales se divide
-    niveles_mallado_rectangular = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 30, "Fina": 50, "Muy Fina": 100}
-    #  Los niveles de discretizacion: ([parámetro en función logaritmica (ver ],
+    #  Both dimensions will be divided in N equal parts.
+    rectangular_element_partition_dict = {"Muy Gruesa": 6, "Gruesa": 12, "Media": 30, "Fina": 50, "Muy Fina": 100}
+    #  Discretization levels
     niveles_mallado_circular = {"Muy Gruesa": (3, 45), "Gruesa": (6, 30), "Media": (12, 10),
                                 "Fina": (25, 5), "Muy Fina": (50, 2)}
 
@@ -465,7 +465,7 @@ class ACSAHEGeometricSolution:
                     dy if hay_region_rectangular else None,
                     min(dx, dy) if hay_region_circular else None,
                     d_ang if hay_region_circular else None)
-        factor_rectangular = 1 / self.niveles_mallado_rectangular.get(nivel_discretizacion)
+        factor_rectangular = 1 / self.rectangular_element_partition_dict.get(nivel_discretizacion)
         factor_circular = self.niveles_mallado_circular.get(nivel_discretizacion)
 
         return (factor_rectangular * max(delta_x) if hay_region_rectangular else None,
