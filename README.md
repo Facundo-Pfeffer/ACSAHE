@@ -34,12 +34,12 @@ To achieve better user understanding and software learning, a YouTube channel ha
 [![ACSAHE Presentation](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=ARGENTINA+PRESENTATION+AT+COLEIC+PANAMA:+FIRST+PLACE+WINNER+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "ARGENTINA PRESENTATION AT COLEIC PANAMA: FIRST PLACE WINNER - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
 
 ## References
-[1] National Institute of Industrial Technology (INTI), CIRSOC 201- ARGENTINE REGULATION FOR CONCRETE STRUCTURES. 2005.  
+[1] Instituto Nacional de Tecnología Industrial (INTI), CIRSOC 201- REGLAMENTO ARGENTINO DE ESTRUCTURAS DE HORMIGÓN. 2005.  
 [2] American Concrete Institute, 318-19(22): Building Code Requirements for Structural Concrete and Commentary. American Concrete Institute, 2022. doi: 10.14359/51716937.  
-[3] Oscar Möller, STRUCTURAL CONCRETE, Second Edition. Rosario: UNR Editora, 2022.  
-[4] Mauro Poliotti, "REINFORCED CONCRETE DIMENSIONING OF GENERIC REINFORCED CONCRETE SECTIONS SUBJECTED TO OBLIQUE COMPOSITE FLEXURE," Rosario, Argentina., 2013.  
-[5] Exacadesign, "Exacad," www.exacadesign.com. Accessed: Jul. 14, 2024. [Online]. Available: www.exacadesign.com  
-[6] ENERCALC., "ENERCALC Structural Engineering Library," 2024. Accessed: Aug. 27, 2024. [Online]. Available: https://enercalc.com/structural-engineering-library-sel/  
-[7] M. Menegotto, "Method of analysis of cyclically loaded RC plane frames including changes in geometry and non-elastic behavior of elements under normal force and bending," 1973.  
-[8] National Institute of Industrial Technology, "ARGENTINE REGULATION FOR SEISMIC-RESISTANT CONSTRUCTION PART I GENERAL CONSTRUCTION," 2018.  
-[9] American Society of Civil Engineers, ASCE 7-22. American Society of Civil Engineers, 2022. doi: 10.1061/9780784415788.
+[3] Oscar Möller, HORMIGÓN ESTRUCTURAL, Segunda Edición. Rosario: UNR Editora, 2022.  
+[4] Mauro Poliotti, “HORMIGÓN ARMADO DIMENSIONAMIENTO DE SECCIONES DE HORMIGÓN ARMADO DE FORMA GENÉRICA SOLICITADAS A FLEXIÓN COMPUESTA OBLICUA,” Rosario, Argentina., 2013.  
+[5] Exacadesign, “Exacad,” www.exacadesign.com. Accessed: Jul. 14, 2024. [Online]. Available: www.exacadesign.com  
+[6] ENERCALC., “ENERCALC Structural Engineering Library,” 2024. Accessed: Aug. 27, 2024. [Online]. Available: https://enercalc.com/structural-engineering-library-sel/  
+[7] M. Menegotto, “Method of analysis of cyclically loaded RC plane frames including changes in geometry and non-elastic behavior of elements under normal force and bending,” 1973.  
+[8] Instituto Nacional de Tecnología Industrial, “REGLAMENTO ARGENTINO PARA CONSTRUCCIONES SISMORRESISTENTES PARTE I CONSTRUCCIONES EN GENERAL,” 2018.  
+[9] American Society of Civil Engineers, ASCE 7-22. American Society of Civil Engineers, 2022. doi: 10.1061/9780784415788.  
