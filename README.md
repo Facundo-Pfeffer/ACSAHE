@@ -6,7 +6,18 @@
 [Versión README en Español](README_es.md)
 
 <img src="build/gui/images/COMPLETE LOGO - README.png" align="right" alt="ACSAHE Logo" width="178" height="178">
-ACSAHE is a program dedicated to creating Moment-Normal Interaction Diagrams for arbitrary structural concrete sections, based on the CIRSOC 201 regulations of the Argentine Republic.
+ACSAHE is a desktop application designed to generate interaction diagrams for structural concrete sections subjected to combined axial load and biaxial bending, in full compliance with ACI 318-19(22), Chapter 22.
+Built with flexibility and accessibility in mind, ACSAHE enables structural engineers, students, and researchers to perform advanced section-level strength analysis without the need for expensive commercial software.
+## Key Features
+
+- **Full Biaxial Strength Diagrams**  
+  Computes complete 3D interaction surfaces representing the axial–biaxial bending strength behavior of the section.
+
+- **Arbitrary Section Geometry**  
+  Easily define and analyze **any** cross-sectional geometry, including complex or irregular shapes.
+
+- **Prestressed Reinforcement Support**  
+  Enables the user to include prestressed reinforcement directly into the analysis—**a rare feature** among similar tools.
 
 It was developed by Facundo L. Pfeffer in collaboration with Dr. Ing. Oscar Möller at the Institute of Applied Mechanics and Structures (IMAE) of the National University of Rosario.
 
