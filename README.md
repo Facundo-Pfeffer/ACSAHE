@@ -8,6 +8,7 @@
 <img src="build/gui/images/COMPLETE LOGO - README.png" align="right" alt="ACSAHE Logo" width="178" height="178">
 ACSAHE is a desktop application designed to generate interaction diagrams for structural concrete sections subjected to combined axial load and biaxial bending, in full compliance with ACI 318-19(22), Chapter 22.
 Built with flexibility and accessibility in mind, ACSAHE enables structural engineers, students, and researchers to perform advanced section-level strength analysis without the need for expensive commercial software.
+
 ## Key Features
 
 - **Full Biaxial Strength Diagrams**  
