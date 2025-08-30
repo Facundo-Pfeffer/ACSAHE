@@ -100,7 +100,7 @@ class ACSAHEUserInterface(QMainWindow):
                 below_text_html=(
                     "Creado por el Ing. Facundo Pfeffer & el Dr. Ing. Oscar Möller.<br>"
                     "2025. Universidad Nacional de Rosario<br>"
-                    "Protegido bajo la <a href='https://opensource.org/licenses/MIT'>Licencia MIT de código libre</a>."
+                    "Protegido bajo la <a href='https://github.com/Facundo-Pfeffer/ACSAHE/blob/main/LICENSE'>Licencia  Apache-2.0 de código libre</a>."
                 )
             ),
             control_widgets=control_widgets

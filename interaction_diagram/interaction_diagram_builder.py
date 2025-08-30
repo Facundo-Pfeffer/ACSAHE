@@ -12,7 +12,7 @@ import copy
 
 from geometry.section_analysis import ACSAHEGeometricSolution
 
-diferencia_admisible = 0.5
+max_degree_diff = 0.5  # Used to evaluate precision of numeric solution based on neutral axis inclination.
 
 
 def show_message(message, titulo="Mensaje"):
@@ -79,7 +79,7 @@ class UniaxialInteractionDiagram:
     def solve_limit_planes(self, plano_de_deformacion):
         try:
             sol = fsolve(
-                self.evaluar_diferencia_para_inc_eje_neutro,
+                self.evaluate_neutral_axis_inclination_diff,
                 x0=-self.uniaxial_angle,
                 xtol=0.005,  # ~20 seconds.
                 args=plano_de_deformacion,
@@ -88,42 +88,44 @@ class UniaxialInteractionDiagram:
             )
             theta, precision, is_success = sol[0][0], sol[1]['fvec'], sol[2] == 1
             theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
-            if is_success and abs(precision) < diferencia_admisible:
+            if is_success and abs(precision) < max_degree_diff:
                 sumF, Mx, My, phi = self.get_solution_for_theta_and_strain_plane(theta, *plano_de_deformacion)
                 return {
                     "sumF": sumF,
                     "M": self.get_resulting_uniaxial_moment(Mx, My),
                     "plano_de_deformacion": plano_de_deformacion,
+                    # color is only a property used for occasional plots when debugging or writing papers.
                     "color": self.transform_number_in_rainbow_color(abs(plano_de_deformacion[3])),
                     "phi": phi,
                     "Mx": Mx,
                     "My": My,
                     "is_capped": False  # Some compression points will later be capped according to 22.4.2.
                 }
-            else:  # Used only for debugging solution-less points
+            else:  # Used only for debugging solution-less points. Safe to disregard.
                 pass
         except Exception as e:
             traceback.print_exc()
             raise(e)
 
-    def evaluar_diferencia_para_inc_eje_neutro(self, theta, *plano_de_deformacion):
+    def evaluate_neutral_axis_inclination_diff(self, theta, *plano_de_deformacion):
         theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
         sumF, Mx, My, phi = self.get_solution_for_theta_and_strain_plane(theta, *plano_de_deformacion)
         ex = round(My / sumF, 5)
         ey = round(Mx / sumF, 5)
         if ex == 0 and ey == 0:  # Carga centrada, siempre "pertenece" al plano de carga.
             return 0
-        angulo_momento_con_x = self.obtener_angulo_resultante_momento(Mx, My)
-        angulo_momento_esperado_con_x = 180 - abs(self.uniaxial_angle)
-        if angulo_momento_esperado_con_x >= 180:
-            angulo_momento_esperado_con_x = angulo_momento_esperado_con_x - 180  # Para que se encuentre en rango [0, 180]
-        diferencia = angulo_momento_con_x - angulo_momento_esperado_con_x  # Apuntamos a que esto sea 0
-        diferencia = diferencia if abs(diferencia) > diferencia_admisible else 0
-        diferencia = diferencia if abs(180-diferencia) > diferencia_admisible else 0  # Se observó que en algunos casos,
-        # la función scipy.fsolve se traba cuando obtiene el mismo resultado sucesivas veces, por lo que toma válida
-        return diferencia
+        x_moment_angle = self.get_moment_angle(Mx, My)
+        expected_moment_angle = 180 - abs(self.uniaxial_angle)
+        if expected_moment_angle >= 180:
+            expected_moment_angle = expected_moment_angle - 180  # Forcing range [0, 180].
+        diff = x_moment_angle - expected_moment_angle  # We aim to make diff 0.
 
-    def calculo_distancia_eje_neutro_de_elements_list(self, theta_rad):
+        # In some cases, scipy.fsolve enters in infinite iteration loop is this is not forced.
+        diff = diff if abs(diff) > max_degree_diff else 0
+        diff = diff if abs(180-diff) > max_degree_diff else 0
+        return diff
+
+    def get_element_neutral_axis_distance(self, theta_rad):
         sin_theta, cos_theta = self.sincos_cached(theta_rad)
 
         concrete_rotated = self.concrete_element_array.copy()
@@ -145,7 +147,7 @@ class UniaxialInteractionDiagram:
 
     @lru_cache(maxsize=1024)
     def get_solution_for_theta_and_strain_plane(self, theta, *plano_de_deformacion):
-        rot_concrete_array, rot_rebar_array, rot_prestressed_array = self.calculo_distancia_eje_neutro_de_elements_list(theta)
+        rot_concrete_array, rot_rebar_array, rot_prestressed_array = self.get_element_neutral_axis_distance(theta)
         rot_concrete_array.sort(order="neutral_axis_distance")
         rot_rebar_array.sort(order="neutral_axis_distance")
         rot_prestressed_array.sort(order="neutral_axis_distance")
@@ -160,11 +162,11 @@ class UniaxialInteractionDiagram:
         return (1 if Mx >= 0 else -1) * math.sqrt(Mx ** 2 + My ** 2)
 
     @staticmethod
-    def obtener_angulo_resultante_momento(Mx, My):
-        angulo_x = math.degrees(math.atan2(My, Mx))
-        if angulo_x == 180:
+    def get_moment_angle(Mx, My):
+        x_angle = math.degrees(math.atan2(My, Mx))
+        if x_angle == 180:
             return 0
-        return angulo_x if angulo_x >= 0 else angulo_x + 180  # Para que se encuentre comprendido en el rango [0, 180]
+        return x_angle if x_angle >= 0 else x_angle + 180  # x_angle belongs to range [0, 180]
 
     def _get_strain_plane_equation(self, rot_concrete_array, rot_rebar_array, rot_prestressed_array,
                                    plano_de_deformacion):
@@ -370,9 +372,9 @@ class UniaxialInteractionDiagram:
         transverse_reinf_factor = 0.80 if self.geometric_solution.tipo_estribo == "Estribos" else 0.85
         gross_area = self.geometric_solution.seccion_H.area
         fc = self.geometric_solution.hormigon.fc / 10
-        if len(self.geometric_solution.EA) == 0 and len(self.geometric_solution.EAP) == 0:
+        if len(self.geometric_solution.EA) == 0 and len(self.geometric_solution.EAP) == 0:  # No reinforcement.
             return transverse_reinf_factor * 0.85 * fc * gross_area
-        elif len(self.geometric_solution.EAP) == 0:
+        elif len(self.geometric_solution.EAP) == 0:  # No prestressed reinforcement.
             fy = self.geometric_solution.EA[0].fy
             Ast = self.geometric_solution.seccion_H.Ast
             po = 0.85*fc*(gross_area-Ast) + fy * Ast  # 22.4.2.2
@@ -383,7 +385,7 @@ class UniaxialInteractionDiagram:
             fse = self.geometric_solution.EAP[0].fse
             Ep = self.geometric_solution.EAP[0].Eps
             Apt = self.geometric_solution.seccion_H.Apt
-            Apd = Apt  # Revisar
+            Apd = Apt  # Review
             po = 0.85*fc*(gross_area-Ast-Apd)+fy*Ast-(fse-0.003*Ep)*Apt  # 22.4.2.3
             return transverse_reinf_factor * po
 
