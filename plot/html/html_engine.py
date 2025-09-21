@@ -9,12 +9,12 @@ class ACSAHEHtmlEngine:
     def caracteristicas_materiales_html(self, geometric_solution):
         template = self.env.get_template("materials_summary_template.html")
         return template.render(
-            hormigon=geometric_solution.hormigon,
+            hormigon=geometric_solution.concrete,
             acero_pasivo=geometric_solution.acero_pasivo,
             acero_activo=geometric_solution.acero_activo,
             def_de_pretensado=geometric_solution.def_de_pretensado_inicial,
             tipo_estribo=geometric_solution.tipo_estribo,
-            tiene_acero_activo=bool(geometric_solution.EAP)
+            tiene_acero_activo=bool(geometric_solution.prestressed_rebar_array)
         )
 
     def propiedades_html(self, geometric_solution) -> str:
@@ -30,22 +30,22 @@ class ACSAHEHtmlEngine:
         template = self.env.get_template("section_properties_template.html")
 
         return template.render(
-            area=geometric_solution.seccion_H.area,
-            Ix=geometric_solution.seccion_H.Ix,
-            Iy=geometric_solution.seccion_H.Iy,
-            cuantia_pasiva=geometric_solution.EA.cuantia_geometrica(geometric_solution.seccion_H.area, output_str=True),
+            area=geometric_solution.meshed_section.area,
+            Ix=geometric_solution.meshed_section.Ix,
+            Iy=geometric_solution.meshed_section.Iy,
+            cuantia_pasiva=geometric_solution.rebar_array.cuantia_geometrica(geometric_solution.meshed_section.area, output_str=True),
             cuantia_activa=(
-                geometric_solution.EAP.cuantia_geometrica(geometric_solution.seccion_H.area, output_str=True)
-                if geometric_solution.EAP else None
+                geometric_solution.prestressed_rebar_array.cuantia_geometrica(geometric_solution.meshed_section.area, output_str=True)
+                if geometric_solution.prestressed_rebar_array else None
             ),
             nivel_disc=geometric_solution.nivel_disc,
-            dx=geometric_solution.seccion_H.dx,
-            dy=geometric_solution.seccion_H.dy,
-            d_ang=geometric_solution.seccion_H.d_ang,
-            dr=geometric_solution.seccion_H.dr,
+            dx=geometric_solution.meshed_section.dx,
+            dy=geometric_solution.meshed_section.dy,
+            d_ang=geometric_solution.meshed_section.d_ang,
+            dr=geometric_solution.meshed_section.dr,
             info_pretensado=(
                 f"ec: {geometric_solution.ec:.2e}<br>φx: {geometric_solution.phix:.2e}<br>φy: {geometric_solution.phiy:.2e}"
-                if geometric_solution.EAP else None
+                if geometric_solution.prestressed_rebar_array else None
             )
         )
 

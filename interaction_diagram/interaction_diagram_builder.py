@@ -41,12 +41,12 @@ class UniaxialInteractionDiagram:
 
     def get_concrete_element_array(self):
         return np.array([
-            (element.xg, element.yg, element.area, 0.0, 0.0) for element in self.geometric_solution.EEH],
+            (element.xg, element.yg, element.area, 0.0, 0.0) for element in self.geometric_solution.concrete_array],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float), ('strain', float)])
 
     def get_rebar_array(self):
         return np.array([
-            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.ey) for rebar in self.geometric_solution.EA],
+            (rebar.xg, rebar.yg, rebar.area, 0.0, 0.0, rebar.ey) for rebar in self.geometric_solution.rebar_array],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
                    ('strain', float),
                    ('ey', float)  # ey is later used for computing the strength reduction factor Φ (Table 21.2.2)
@@ -56,7 +56,7 @@ class UniaxialInteractionDiagram:
         return np.array([
             (rebar.xg, rebar.yg, rebar.area, 0.0,
              0.0, rebar.def_elastica_hormigon_perdidas, rebar.deformacion_de_pretensado_inicial, 0.0)
-            for rebar in self.geometric_solution.EAP],
+            for rebar in self.geometric_solution.prestressed_rebar_array],
             dtype=[('xg', float), ('yg', float), ('area', float), ("neutral_axis_distance", float),
                    ('flexural_strain', float), ('concrete_shortening_strain', float), ('effective_strain', float), ('total_strain', float)])
 
@@ -210,7 +210,7 @@ class UniaxialInteractionDiagram:
         # -------------------- 2. Concrete --------------------
         max_compression_strain = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
         concrete_forces = np.array([
-            self.geometric_solution.hormigon.simplified_stress_strain_eq(e, e_max_comp=max_compression_strain) * a
+            self.geometric_solution.concrete.simplified_stress_strain_eq(e, e_max_comp=max_compression_strain) * a
             for e, a in zip(rot_concrete_array['strain'], rot_concrete_array['area'])
         ])
         sumFH = np.sum(concrete_forces)
@@ -219,7 +219,7 @@ class UniaxialInteractionDiagram:
 
         # -------------------- 3. Passive Rebar --------------------
         rebar_forces = np.array([
-            self.geometric_solution.EA[0].stress_strain_eq(e) * a for e, a in zip(
+            self.geometric_solution.rebar_array[0].stress_strain_eq(e) * a for e, a in zip(
                 rot_rebar_array['strain'],
                 rot_rebar_array['area']
             )
@@ -237,7 +237,7 @@ class UniaxialInteractionDiagram:
         )
 
         prestressed_forces = np.array([
-            self.geometric_solution.EAP[0].stress_strain_eq(e) * a for e, a in zip(
+            self.geometric_solution.prestressed_rebar_array[0].stress_strain_eq(e) * a for e, a in zip(
                 rot_prestressed_array['total_strain'],
                 rot_prestressed_array['area']
             )
@@ -370,21 +370,21 @@ class UniaxialInteractionDiagram:
     def _get_maximum_compression_value(self):
         """"Getting maximum nominal value for Pn according to 22.4.2.1"""
         transverse_reinf_factor = 0.80 if self.geometric_solution.tipo_estribo == "Estribos" else 0.85
-        gross_area = self.geometric_solution.seccion_H.area
-        fc = self.geometric_solution.hormigon.fc / 10
-        if len(self.geometric_solution.EA) == 0 and len(self.geometric_solution.EAP) == 0:  # No reinforcement.
+        gross_area = self.geometric_solution.meshed_section.area
+        fc = self.geometric_solution.concrete.fc / 10
+        if len(self.geometric_solution.rebar_array) == 0 and len(self.geometric_solution.prestressed_rebar_array) == 0:  # No reinforcement.
             return transverse_reinf_factor * 0.85 * fc * gross_area
-        elif len(self.geometric_solution.EAP) == 0:  # No prestressed reinforcement.
-            fy = self.geometric_solution.EA[0].fy
-            Ast = self.geometric_solution.seccion_H.Ast
+        elif len(self.geometric_solution.prestressed_rebar_array) == 0:  # No prestressed reinforcement.
+            fy = self.geometric_solution.rebar_array[0].fy
+            Ast = self.geometric_solution.meshed_section.Ast
             po = 0.85*fc*(gross_area-Ast) + fy * Ast  # 22.4.2.2
             return transverse_reinf_factor * po
         else:
-            fy = self.geometric_solution.EA[0].fy
-            Ast = self.geometric_solution.seccion_H.Ast
-            fse = self.geometric_solution.EAP[0].fse
-            Ep = self.geometric_solution.EAP[0].Eps
-            Apt = self.geometric_solution.seccion_H.Apt
+            fy = self.geometric_solution.rebar_array[0].fy
+            Ast = self.geometric_solution.meshed_section.Ast
+            fse = self.geometric_solution.prestressed_rebar_array[0].fse
+            Ep = self.geometric_solution.prestressed_rebar_array[0].Eps
+            Apt = self.geometric_solution.meshed_section.Apt
             Apd = Apt  # Review
             po = 0.85*fc*(gross_area-Ast-Apd)+fy*Ast-(fse-0.003*Ep)*Apt  # 22.4.2.3
             return transverse_reinf_factor * po

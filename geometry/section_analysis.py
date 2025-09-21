@@ -11,7 +11,7 @@ from materials.acero_pasivo import BarraAceroPasivo
 from materials.acero_pretensado import BarraAceroPretensado
 from build.utils.excel_manager import ExcelManager
 from geometry.section_geometry_engine import Node, Region, ArbitraryCrossSection, CircularRegion
-from materials.hormigon import Hormigon
+from materials.concrete import Concrete
 from materials.matrices import MatrizAceroPasivo, MatrizAceroActivo
 from build.utils.plotly_engine import ACSAHEPlotlyEngine
 
@@ -33,6 +33,10 @@ class ACSAHEGeometricSolution:
         self.lista_ang_plano_de_carga = set()
         self.file_name = file_path
         self.read_only = read_only
+
+        # Attributes to build
+        self.concrete_array, self.rebar_array, self.prestressed_rebar_array = None, None, None
+
         self.build()
 
 
@@ -41,18 +45,17 @@ class ACSAHEGeometricSolution:
         self._load_excel_sheets(self.excel_manager)
         self.problema = self._get_result_params()
 
-        self.hormigon, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
+        self.concrete, self.acero_pasivo, self.acero_activo, self.estribo = None, None, None, None
         self._load_material_properties()
         try:
-            self.seccion_H = self.get_concrete_array()
+            self.meshed_section = self.get_meshed_concrete_section()
+            self.XG, self.YG = self.meshed_section.xg, self.meshed_section.yg
 
-            self.XG, self.YG = self.seccion_H.xg, self.seccion_H.yg
-
-            self.EEH = self.seccion_H.elements_list  # Matriz Hormigón
-            self.EA = self._get_rebar_array()
-            self.EAP = self.get_prestressed_bars_array()
-            self.seccion_H.Ast = sum([x.area for x in self.EA])
-            self.seccion_H.Apt = sum([x.area for x in self.EAP])
+            self.concrete_array = self.meshed_section.elements_list  # Concrete Array.
+            self.rebar_array = self._get_rebar_array()
+            self.prestressed_rebar_array = self._get_prestressed_bars_array()
+            self.meshed_section.Ast = sum([x.area for x in self.rebar_array])
+            self.meshed_section.Apt = sum([x.area for x in self.prestressed_rebar_array])
 
             self.deformacion_maxima_de_acero = self._get_max_steel_strain()
             self.planos_de_deformacion = self.get_strain_planes()
@@ -175,7 +178,7 @@ class ACSAHEGeometricSolution:
 
     def _load_material_properties(self):
 
-        self.hormigon = Hormigon(tipo=self.ingreso_datos_sheet.get_value("C", "4"))
+        self.concrete = Concrete(tipo=self.ingreso_datos_sheet.get_value("C", "4"))
         self.tipo_estribo = self.ingreso_datos_sheet.get_value("C", "10")
 
         def_de_rotura_a_pasivo = self.obtener_def_de_rotura_a_pasivo()
@@ -187,7 +190,7 @@ class ACSAHEGeometricSolution:
 
     def _get_initial_prestressed_plain(self):
         """Gets the paratemers of the initial section elastic deformation, based on the prestressing action."""
-        if not self.EAP:  # Caso de Hormigón Armado
+        if not self.prestressed_rebar_array:  # Caso de Hormigón Armado
             return 0, 0, 0
         non_linear_solution = fsolve(
             self.strain_function_to_converge, [-BarraAceroPretensado.deformacion_de_pretensado_inicial, 0, 0],
@@ -219,10 +222,10 @@ class ACSAHEGeometricSolution:
 
     def _get_mesh_characteristics(self):
         return {
-            "ΔX": f"{round(self.seccion_H.dx, 2)} cm" if self.seccion_H.dx else None,
-            "ΔY": f"{round(self.seccion_H.dy, 2)} cm" if self.seccion_H.dy else None,
-            "Δr": f"{round(self.seccion_H.dr, 2)} cm" if self.seccion_H.dr else None,
-            "Δθ": f"{round(self.seccion_H.d_ang, 2)}°" if self.seccion_H.d_ang else None}
+            "ΔX": f"{round(self.meshed_section.dx, 2)} cm" if self.meshed_section.dx else None,
+            "ΔY": f"{round(self.meshed_section.dy, 2)} cm" if self.meshed_section.dy else None,
+            "Δr": f"{round(self.meshed_section.dr, 2)} cm" if self.meshed_section.dr else None,
+            "Δθ": f"{round(self.meshed_section.d_ang, 2)}°" if self.meshed_section.d_ang else None}
 
     def _get_colors_kwargs(self, plano_de_def, arcoiris=False, blanco_y_negro=False):
         lista_colores = ["k", "r", "b", "g", "c", "m", "y", "k"]
@@ -273,7 +276,7 @@ class ACSAHEGeometricSolution:
 
     def assign_elastic_strains_to_prestressed_bars(self):
         ec_plano = self.ec_plano_deformacion_elastica_inicial
-        for elemento_pretensado in self.EAP:
+        for elemento_pretensado in self.prestressed_rebar_array:
             elemento_pretensado.def_elastica_hormigon_perdidas = ec_plano(elemento_pretensado.xg,
                                                                           elemento_pretensado.yg)
 
@@ -326,7 +329,7 @@ class ACSAHEGeometricSolution:
         except Exception:
             raise Exception("No se pudieron setear las propiedades del acero pasivo, revise configuración")
 
-    def get_prestressed_bars_array(self):
+    def _get_prestressed_bars_array(self):
         lista_filas = self.ingreso_datos_sheet.get_rows_range_between_values(
             ("ARMADURAS ACTIVAS (H°- Pretensado)", "DISCRETIZACIÓN DE LA SECCIÓN"),
             columns_range=["A"])
@@ -395,7 +398,7 @@ class ACSAHEGeometricSolution:
     def _get_number_of_nodes(self, region):
         return self.ingreso_datos_sheet.get_value("G", region[0])
 
-    def get_concrete_array(self):
+    def get_meshed_concrete_section(self):
         filas_hormigon = self.ingreso_datos_sheet.get_rows_range_between_values(
             ("GEOMETRÍA DE LA SECCIÓN DE HORMIGÓN", "ARMADURAS PASIVAS (H°- Armado)"),
             columns_range=["A"])
@@ -479,13 +482,13 @@ class ACSAHEGeometricSolution:
         sumFA = sumFP = sumFH = 0
         MxA = MxAP = MxH = 0
         MyA = MyAP = MyH = 0
-        for barra in self.EA:
+        for barra in self.rebar_array:
             def_elemento, area = ecuacion_plano_deformacion(barra.xg, barra.yg), barra.area
             FA = barra.stress_strain_eq(def_elemento) * area
             sumFA = sumFA + FA
             MxA = FA * barra.yg + MxA
             MyA = -FA * barra.xg + MyA
-        for barra_p in self.EAP:
+        for barra_p in self.prestressed_rebar_array:
             deformacion_elastica_hormingon, area = ecuacion_plano_deformacion(barra_p.xg, barra_p.yg), barra_p.area
             deformacion_pretensado_inicial = barra_p.deformacion_de_pretensado_inicial
             deformacion_total = deformacion_elastica_hormingon + deformacion_pretensado_inicial
@@ -495,9 +498,9 @@ class ACSAHEGeometricSolution:
             MxAP = Fp * barra_p.yg + MxAP
             MyAP = -Fp * barra_p.xg + MyAP
 
-        for element in self.EEH:
+        for element in self.concrete_array:
             def_elemento, area = ecuacion_plano_deformacion(element.xg, element.yg), element.area
-            F_hor = self.hormigon.elastic_stress_strain_eq(def_elemento) * area
+            F_hor = self.concrete.elastic_stress_strain_eq(def_elemento) * area
             sumFH = sumFH + F_hor
             MxH = F_hor * element.yg + MxH
             MyH = -F_hor * element.xg + MyH
@@ -510,18 +513,18 @@ class ACSAHEGeometricSolution:
 
     def print_result_tridimensional(self, ec, phix, phiy):
         ec_plano = lambda x, y: ec + math.tan(math.radians(phix)) * y + math.tan(math.radians(phiy)) * x
-        self.seccion_H.mostrar_regions_3d(ecuacion_plano_a_desplazar=ec_plano)
+        self.meshed_section.mostrar_regions_3d(ecuacion_plano_a_desplazar=ec_plano)
 
     def construir_grafica_seccion_plotly(self, fig=None):
         """Muestra la sección obtenida luego del proceso de discretización."""
 
-        x_range = self.seccion_H.x_max - self.seccion_H.x_min
-        y_range = self.seccion_H.y_max - self.seccion_H.y_min
+        x_range = self.meshed_section.x_max - self.meshed_section.x_min
+        y_range = self.meshed_section.y_max - self.meshed_section.y_min
         common_range = max(x_range, y_range) * 1.1
 
         # Center the common range around the midpoints of the original ranges
-        x_mid = (self.seccion_H.x_max + self.seccion_H.x_min) / 2
-        y_mid = (self.seccion_H.y_max + self.seccion_H.y_min) / 2
+        x_mid = (self.meshed_section.x_max + self.meshed_section.x_min) / 2
+        y_mid = (self.meshed_section.y_max + self.meshed_section.y_min) / 2
 
         if not fig:
             fig = go.Figure(layout_template="plotly_white")
@@ -531,9 +534,9 @@ class ACSAHEGeometricSolution:
         )
 
         plotly_util = ACSAHEPlotlyEngine(fig)
-        plotly_util.plot_reinforcement_bars_as_circles(self.EA, self.EAP)
+        plotly_util.plot_reinforcement_bars_as_circles(self.rebar_array, self.prestressed_rebar_array)
 
-        self.seccion_H.plotly(fig, self.lista_ang_plano_de_carga)
+        self.meshed_section.plotly(fig, self.lista_ang_plano_de_carga)
 
         fig.update_layout(
             xaxis=dict(

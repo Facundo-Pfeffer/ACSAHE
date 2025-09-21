@@ -1,4 +1,4 @@
-class Hormigon:
+class Concrete:
     B1 = None
 
     def __init__(self, tipo):

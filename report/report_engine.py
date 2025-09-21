@@ -29,10 +29,10 @@ class ACSAHEReportEngine:
 
     def _generate_materials_table(self):
         rows = [
-            ['Hormigón','Calidad del hormigón.\nEl número indica la resistencia característica a la compresión expresada en MPa.', f'H{int(self.geometric_solution.hormigon.fc)}'],
+            ['Hormigón','Calidad del hormigón.\nEl número indica la resistencia característica a la compresión expresada en MPa.', f'H{int(self.geometric_solution.concrete.fc)}'],
             ['Acero Pasivo', 'Tipo de acero seleccionado para armadura pasiva.', self.geometric_solution.acero_pasivo]
         ]
-        if self.geometric_solution.EAP:
+        if self.geometric_solution.prestressed_rebar_array:
             rows.append([
                 'Acero Activo',
                 'Tipo de acero seleccionado para armadura activa.\nDeformación efectiva del acero de pretensado (producidas las pérdidas).',
@@ -45,22 +45,22 @@ class ACSAHEReportEngine:
 
     def _generate_section_properties_table(self):
         rows = [
-            ['Área', 'Área de la sección bruta de Hormigón.', f"{round(self.geometric_solution.seccion_H.area, 2)} cm²"],
-            ['Ix', 'Inercia con respecto al eje x.', f"{round(self.geometric_solution.seccion_H.Ix, 2)} cm⁴"],
-            ['Iy', 'Inercia con respecto al eje y.', f"{round(self.geometric_solution.seccion_H.Iy, 2)} cm⁴"],
-            ['ρ', 'Cuantía geométrica de refuerzo pasivo.', self.geometric_solution.EA.cuantia_geometrica(self.geometric_solution.seccion_H.area, output_str=True)]
+            ['Área', 'Área de la sección bruta de Hormigón.', f"{round(self.geometric_solution.meshed_section.area, 2)} cm²"],
+            ['Ix', 'Inercia con respecto al eje x.', f"{round(self.geometric_solution.meshed_section.Ix, 2)} cm⁴"],
+            ['Iy', 'Inercia con respecto al eje y.', f"{round(self.geometric_solution.meshed_section.Iy, 2)} cm⁴"],
+            ['ρ', 'Cuantía geométrica de refuerzo pasivo.', self.geometric_solution.rebar_array.cuantia_geometrica(self.geometric_solution.meshed_section.area, output_str=True)]
         ]
-        if self.geometric_solution.EAP:
-            rows.append(['ρp', 'Cuantía geométrica de refuerzo activo.', self.geometric_solution.EAP.cuantia_geometrica(self.geometric_solution.seccion_H.area, output_str=True)])
+        if self.geometric_solution.prestressed_rebar_array:
+            rows.append(['ρp', 'Cuantía geométrica de refuerzo activo.', self.geometric_solution.prestressed_rebar_array.cuantia_geometrica(self.geometric_solution.meshed_section.area, output_str=True)])
 
         disc_text = []
-        if self.geometric_solution.seccion_H.dx: disc_text.append(f"ΔX={round(self.geometric_solution.seccion_H.dx, 2)} cm")
-        if self.geometric_solution.seccion_H.dy: disc_text.append(f"ΔY={round(self.geometric_solution.seccion_H.dy, 2)} cm")
-        if self.geometric_solution.seccion_H.d_ang: disc_text.append(f"Δθ={round(self.geometric_solution.seccion_H.d_ang, 2)} °")
-        if self.geometric_solution.seccion_H.dr: disc_text.append(f"Δr={round(self.geometric_solution.seccion_H.dr, 2)} particiones\n(variación logarítmica)")
+        if self.geometric_solution.meshed_section.dx: disc_text.append(f"ΔX={round(self.geometric_solution.meshed_section.dx, 2)} cm")
+        if self.geometric_solution.meshed_section.dy: disc_text.append(f"ΔY={round(self.geometric_solution.meshed_section.dy, 2)} cm")
+        if self.geometric_solution.meshed_section.d_ang: disc_text.append(f"Δθ={round(self.geometric_solution.meshed_section.d_ang, 2)} °")
+        if self.geometric_solution.meshed_section.dr: disc_text.append(f"Δr={round(self.geometric_solution.meshed_section.dr, 2)} particiones\n(variación logarítmica)")
         rows.append(['Discretización', f"Tipo de discretización elegida: {self.geometric_solution.nivel_disc}.", "\n".join(disc_text)])
 
-        if self.geometric_solution.EAP:
+        if self.geometric_solution.prestressed_rebar_array:
             rows.append(['Pretensado', 'Deformación elástica inicial causada por la fuerza de pretensado, referida al baricentro.', self.show_prestressed_information()])
 
         columns = ['Propiedad', 'Descripción', 'Valor']
@@ -69,6 +69,6 @@ class ACSAHEReportEngine:
 
     def show_prestressed_information(self):
         gs = self.geometric_solution
-        if not gs.EAP:
+        if not gs.prestressed_rebar_array:
             return ''
         return f"ec: {gs.ec:.2e}<br>φx: {gs.phix:.2e}<br>φy: {gs.phiy:.2e}"
