@@ -1,12 +1,31 @@
 from PyQt5.QtWidgets import (QWidget, QLabel, QProgressBar,
     QPushButton, QCheckBox, QHBoxLayout, QSizePolicy)
 
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon, QFont, QPixmap
 from PyQt5.QtCore import Qt, QSize
+import os
+import sys
 
 DEFAULT_SPACING = 8
 DEFAULT_MARGINS = (0, 0, 0, 0)
 DEFAULT_FONT = QFont("Lato", 10)
+
+
+def get_base_path():
+    """Get the base path of the application, whether running from .exe or .py"""
+    if getattr(sys, 'frozen', False):
+        # Running from .exe
+        return os.path.dirname(sys.executable)
+    else:
+        # Running from .py script (debugging)
+        # Get the directory containing the gui package
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and PyInstaller"""
+    base_path = get_base_path()
+    return os.path.join(base_path, relative_path)
 
 
 def load_stylesheet(path="build/gui/style/acsahe.qss") -> str:
@@ -14,21 +33,24 @@ def load_stylesheet(path="build/gui/style/acsahe.qss") -> str:
     Loads and returns the stylesheet content from a QSS file.
 
     Args:
-        path (str): Path to the QSS file.
+        path (str): Path to the QSS file (relative to project root).
 
     Returns:
         str: Stylesheet as a string.
     """
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as file:
+    full_path = get_resource_path(path)
+    if os.path.exists(full_path):
+        with open(full_path, "r", encoding="utf-8") as file:
             return file.read()
     return ""
 
 
-def create_help_icon(icon_path: str, tooltip_text: str, size: int = 15) -> QLabel:
+def create_help_icon(icon_path: str = None, tooltip_text: str = "", size: int = 15) -> QLabel:
     """
     Creates a QLabel styled as a help icon with a tooltip.
     """
+    if icon_path is None:
+        icon_path = get_resource_path("build/gui/icons/information_icon_15px_b.png")
     label = QLabel()
     label.setCursor(Qt.WhatsThisCursor)
     label.setFixedSize(size + 10, size + 10)
@@ -96,7 +118,7 @@ def create_select_file_row(
     font: QFont = QFont("Lato", 10),
     include_reset: bool = False,
     reset_tooltip: str = "Restablecer selección",
-    reset_icon_path: str = "build/gui/icons/restablish_icon_15px.png",
+    reset_icon_path: str = None,
     on_main_click: callable = None,
     on_reset_click: callable = None,
     spacing: int = 8
@@ -115,6 +137,8 @@ def create_select_file_row(
         main_button.clicked.connect(on_main_click)
 
     if include_reset:
+        if reset_icon_path is None:
+            reset_icon_path = get_resource_path("build/gui/icons/restablish_icon_15px.png")
         reset_button = QPushButton()
         reset_button.setCursor(Qt.PointingHandCursor)
         reset_button.setToolTip(reset_tooltip)

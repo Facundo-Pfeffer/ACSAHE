@@ -92,8 +92,13 @@ class ACSAHE:
                         partial_2d_solution.interaction_diagram_points_list)
                     x_partial, y_partial, z_partial, phi_partial = coordinates_3d
                     is_phi_constant = isinstance(geometric_solution.problema["phi_variable"], float)
+                    
+                    # Extract plane indices for hover text (plano_de_deformacion[3] is the index)
+                    plane_indices = [point["plano_de_deformacion"][3] for point in 
+                                    partial_2d_solution.interaction_diagram_points_list]
+                    
                     hover_text_partial = self._get_hover_text(
-                        x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant)
+                        x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant, plane_indices)
 
                     self.plotly_data_subsets[str(angle)] = {
                         "x": x_partial.copy(),
@@ -102,7 +107,8 @@ class ACSAHE:
                         "phi": phi_partial.copy(),
                         "text": hover_text_partial.copy(),
                         "color": colors_partial.copy(),
-                        "is_capped": is_capped_partial.copy()
+                        "is_capped": is_capped_partial.copy(),
+                        "plane_indices": plane_indices.copy()
                     }
 
                     self.x_total.extend(x_partial)
@@ -164,8 +170,8 @@ class ACSAHE:
             message = self.progress_bar_messages["Medio"].format(plano_de_carga=angle)
         self.update_ui(message, progress)
 
-    def _get_hover_text(self, x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant):
+    def _get_hover_text(self, x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant, plane_indices=None):
         if self.geometric_solution.problema["tipo"] == "3D":
-            return self.plotly_engine.hover_text_3d(x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant)
+            return self.plotly_engine.hover_text_3d(x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant, plane_indices)
         else:
-            return self.plotly_engine.hover_text_2d(x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant)
+            return self.plotly_engine.hover_text_2d(x_partial, y_partial, z_partial, phi_partial, angle, is_phi_constant, plane_indices)

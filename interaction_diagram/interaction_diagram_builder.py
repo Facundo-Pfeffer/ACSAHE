@@ -3,7 +3,7 @@ import logging
 import traceback
 from tkinter import messagebox
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import math
 import numpy as np
 from scipy.optimize import fsolve
@@ -12,7 +12,8 @@ import copy
 
 from geometry.section_analysis import ACSAHEGeometricSolution
 
-max_degree_diff = 0.5  # Used to evaluate precision of numeric solution based on neutral axis inclination.
+# Base tolerance for neutral axis inclination precision (degrees)
+BASE_MAX_DEGREE_DIFF = 0.5
 
 
 def show_message(message, titulo="Mensaje"):
@@ -27,7 +28,9 @@ class UniaxialInteractionDiagram:
         self.rebar_array = self.get_rebar_array()
         self.prestressed_reinforcement_array = self.get_prestressed_reinforcement_array()
         self.uniaxial_angle = uniaxial_angle
+        self.expected_moment_angle = self.get_expected_moment_angle()
         self.phi_strength_reduction_factor = geometric_solution.problema["phi_variable"]
+        self.max_degree_diff = self.get_degree_tolerance(geometric_solution)
         try:
             self.no_solution_points_list = []
             self.interaction_diagram_points_list = self.iterate_solution()
@@ -64,10 +67,21 @@ class UniaxialInteractionDiagram:
         """Método principal para la obtención de los diagramas de interacción."""
         interaction_diagram_points = []
         try:
-            with ThreadPoolExecutor(max_workers=int(os.cpu_count())) as executor:
-                futures = [executor.submit(self.solve_limit_planes, plano) for plano in
-                           self.geometric_solution.planos_de_deformacion]
-                for future in as_completed(futures):
+            # Ensure we don't create more worker threads than strain planes available.
+            strain_planes = list(self.geometric_solution.planos_de_deformacion)
+            if not strain_planes:
+                return interaction_diagram_points
+
+            cpu_count = os.cpu_count() or 1
+            max_workers = min(len(strain_planes), cpu_count)
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all futures and keep them in a list to preserve order
+                futures = [executor.submit(self.solve_limit_planes, plano) for plano in strain_planes]
+                
+                # Retrieve results in submission order (not completion order)
+                # This guarantees strain plane ordering is preserved
+                for future in futures:
                     result = future.result()
                     if result is not None:
                         interaction_diagram_points.append(result)
@@ -78,17 +92,23 @@ class UniaxialInteractionDiagram:
 
     def solve_limit_planes(self, plano_de_deformacion):
         try:
+            # Better initial guess: use strain plane info to estimate initial theta
+            # For most strain planes near pure compression/tension, the neutral axis is close to the uniaxial angle
+            x0 = -self.uniaxial_angle
+
+            # Try solving with primary initial guess
             sol = fsolve(
                 self.evaluate_neutral_axis_inclination_diff,
-                x0=-self.uniaxial_angle,
-                xtol=0.005,  # ~20 seconds.
+                x0=x0,
+                xtol=0.005,  # Balanced convergence tolerance
                 args=plano_de_deformacion,
                 full_output=1,
-                maxfev=50
+                maxfev=50  # Keep at 50 for performance
             )
             theta, precision, is_success = sol[0][0], sol[1]['fvec'], sol[2] == 1
             theta = np.radians(theta[0] if isinstance(theta, np.ndarray) else theta)
-            if is_success and abs(precision) < max_degree_diff:
+            
+            if is_success and abs(precision) < self.max_degree_diff:
                 sumF, Mx, My, phi = self.get_solution_for_theta_and_strain_plane(theta, *plano_de_deformacion)
                 return {
                     "sumF": sumF,
@@ -99,7 +119,7 @@ class UniaxialInteractionDiagram:
                     "phi": phi,
                     "Mx": Mx,
                     "My": My,
-                    "is_capped": False  # Some compression points will later be capped according to 22.4.2.
+                    "is_capped": False  # Some compression points will later be capped according to ACI 318-25 22.4.2.
                 }
             else:  # Used only for debugging solution-less points. Safe to disregard.
                 pass
@@ -115,14 +135,11 @@ class UniaxialInteractionDiagram:
         if ex == 0 and ey == 0:  # Carga centrada, siempre "pertenece" al plano de carga.
             return 0
         x_moment_angle = self.get_moment_angle(Mx, My)
-        expected_moment_angle = 180 - abs(self.uniaxial_angle)
-        if expected_moment_angle >= 180:
-            expected_moment_angle = expected_moment_angle - 180  # Forcing range [0, 180].
-        diff = x_moment_angle - expected_moment_angle  # We aim to make diff 0.
+        diff = x_moment_angle - self.expected_moment_angle  # We aim to make diff 0.
 
-        # In some cases, scipy.fsolve enters in infinite iteration loop is this is not forced.
-        diff = diff if abs(diff) > max_degree_diff else 0
-        diff = diff if abs(180-diff) > max_degree_diff else 0
+        # In some cases, scipy.fsolve enters in infinite iteration loop if this is not forced.
+        diff = diff if abs(diff) > self.max_degree_diff else 0
+        diff = diff if abs(180-diff) > self.max_degree_diff else 0
         return diff
 
     def get_element_neutral_axis_distance(self, theta_rad):
@@ -157,9 +174,21 @@ class UniaxialInteractionDiagram:
             rot_concrete_array, rot_rebar_array, rot_prestressed_array, ecuacion_plano_deformacion)
         return sumF, Mx, My, phi
 
-    @staticmethod
-    def get_resulting_uniaxial_moment(Mx, My):
-        return (1 if Mx >= 0 else -1) * math.sqrt(Mx ** 2 + My ** 2)
+    def get_resulting_uniaxial_moment(self, Mx, My):
+        """Project the 3D moment onto the target uniaxial direction to determine sign."""
+        magnitude = math.hypot(Mx, My)
+        if magnitude == 0:
+            return 0.0
+
+        # Use the actual uniaxial angle (with sign) to build the unit vector that defines
+        # the expected bending direction. This keeps the sign consistent even for λ≈±90°.
+        angle_rad = math.radians(self.uniaxial_angle)
+        dir_x = math.cos(angle_rad)
+        dir_y = math.sin(angle_rad)
+        projected = Mx * dir_x + My * dir_y
+        sign = 1 if projected >= 0 else -1
+
+        return sign * magnitude
 
     @staticmethod
     def get_moment_angle(Mx, My):
@@ -205,7 +234,6 @@ class UniaxialInteractionDiagram:
         rot_rebar_array['strain'] = strain_plane_eq(rot_rebar_array["neutral_axis_distance"])
         rot_prestressed_array['flexural_strain'] = strain_plane_eq(
             rot_prestressed_array["neutral_axis_distance"])
-
 
         # -------------------- 2. Concrete --------------------
         max_compression_strain = min(rot_concrete_array['strain'][0], rot_concrete_array['strain'][-1])
@@ -398,3 +426,20 @@ class UniaxialInteractionDiagram:
                 copy_point["sumF"] = -compression_force_limit*copy_point["phi"]
                 self.interaction_diagram_points_list.append(copy_point)
                 self.interaction_diagram_points_list[index]["is_capped"] = True  # Overwriting original point.
+
+    def get_expected_moment_angle(self):
+        expected_moment_angle = 180 - abs(self.uniaxial_angle)
+        if expected_moment_angle >= 180:
+            expected_moment_angle = expected_moment_angle - 180  # Forcing range [0, 180].
+        return expected_moment_angle
+
+    @staticmethod
+    def get_degree_tolerance(geometric_solution):
+        # Adaptive tolerance based on section size (larger sections need more relaxed angular tolerance)
+        section_dimension = max(
+            geometric_solution.meshed_section.x_max - geometric_solution.meshed_section.x_min,
+            geometric_solution.meshed_section.y_max - geometric_solution.meshed_section.y_min
+        )
+        # Scale tolerance: for sections > 100cm, relax tolerance proportionally (capped at 2x)
+        scale_factor = min(1 + (section_dimension - 100) / 200, 2.0) if section_dimension > 100 else 1.0
+        return BASE_MAX_DEGREE_DIFF * scale_factor

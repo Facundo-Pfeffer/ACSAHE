@@ -1,13 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+
 from PyInstaller.utils.hooks import collect_submodules
 
+# Collect all plotly submodules to avoid ModuleNotFoundError
+plotly_submodules = collect_submodules('plotly')
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=[r'C:\HP Laptop Facundo Pfeffer - Drive Backup\Repositories\ACSAHE'],
     binaries=[],
     datas=[('build', 'build')],
-    hiddenimports = collect_submodules('plotly'),
+    hiddenimports=plotly_submodules,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -36,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['build\\images\\logo_H.ico'],
+    icon=['build\\gui\\images\\logo_H.ico'],
 )

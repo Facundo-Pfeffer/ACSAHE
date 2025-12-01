@@ -23,10 +23,10 @@ Built with flexibility and accessibility in mind, ACSAHE enables structural engi
 
 It was developed by Facundo L. Pfeffer in collaboration with Dr. Ing. Oscar Möller at the Institute of Applied Mechanics and Structures (IMAE) of the National University of Rosario.
 
-## 📦 Installation
+## Installation
 There are currently **two versions** of the ACSAHE program:
 
-#### 🆕New version: Windows app installation
+#### New version: Windows app installation
 The New version features a simpler installation as a Windows app, the ability to run everything from a simple .exe file, generate PDF reports, and more!
 Installation steps are:
 1. Download the installer from the [Releases](https://github.com/Facundo-Pfeffer/ACSAHE/releases) section.
@@ -34,16 +34,56 @@ Installation steps are:
 3. Follow the installation wizard instructions.
 4. Once installed, you can start the program from the **start menu** or the **desktop shortcut**.
 
-#### 👜Portable Version
-The original version of the program for legacy users.
+#### Legacy Excel/VBA Version
+The original version of the program that integrates with Excel via VBA. This version is **maintained but deprecated** - new users should use the modern Windows app version.
 
 For installation, simply download the compressed file, open the "ACSAHE" base spreadsheet, and then follow the instructions provided there. **Download link:**
 https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
 
+**For developers**: See [LEGACY.md](LEGACY.md) for detailed information about the legacy Excel/VBA integration, including build instructions and architecture.
+
+## Building from Source
+
+To build the ACSAHE executable from source:
+
+### Prerequisites
+- Python 3.9, 3.10, or 3.11
+- All dependencies from `requirements.txt`
+- PyInstaller: `pip install pyinstaller`
+
+### Quick Build
+
+1. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **Build the executable**:
+   ```bash
+   pyinstaller ACSAHE.spec
+   ```
+
+3. **Output**: The executable will be created at `dist/ACSAHE.exe`
+
+### Building the Installer (Optional)
+
+To create a Windows installer package, you'll need Inno Setup 6+:
+
+```bash
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_sctipt.iss
+```
+
+The installer will be created at `dist_installer/Instalador_ACSAHE.exe`
+
+### Detailed Documentation
+
+For comprehensive build instructions, troubleshooting, and advanced configuration options, see [BUILD_AND_DEPLOYMENT.md](BUILD_AND_DEPLOYMENT.md).
+
 ## Tutorials on YouTube Channel
 To achieve better user understanding and software learning, a YouTube channel has been created where tutorials will be progressively added. https://www.youtube.com/playlist?list=PL2vqHDQzjyupe7ISb2vA9EGn0Qr31nW7g
 
-## 💻 Featured YouTube Videos
+## Featured YouTube Videos
 [![ACSAHE Presentation](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=ARGENTINA+PRESENTATION+AT+COLEIC+PANAMA:+FIRST+PLACE+WINNER+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "ARGENTINA PRESENTATION AT COLEIC PANAMA: FIRST PLACE WINNER - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
 
 ## References

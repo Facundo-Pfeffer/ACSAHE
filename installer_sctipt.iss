@@ -19,10 +19,10 @@ VersionInfoTextVersion=2.0.0-alpha
 UninstallDisplayIcon={app}\ACSAHE.exe
 
 
-SetupIconFile=build\images\COMPLETE-LOGO-NO-TEXT-transparent-bg.ico
+SetupIconFile=build\gui\images\COMPLETE-LOGO-NO-TEXT-transparent-bg.ico
 WizardStyle=modern
-WizardImageFile=build\images\ACSAHE Logo.bmp
-WizardSmallImageFile=build\images\Logo_H.bmp
+WizardImageFile=build\gui\images\ACSAHE Logo.bmp
+WizardSmallImageFile=build\gui\images\Logo_H.bmp
 
 [Files]
 Source: "dist\ACSAHE.exe"; DestDir: "{app}"; Flags: ignoreversion

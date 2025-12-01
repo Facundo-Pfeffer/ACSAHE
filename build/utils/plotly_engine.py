@@ -34,24 +34,28 @@ class ACSAHEPlotlyEngine(object):
     def plot_positive_polygon(self, element, color, thickness, transparencia, negative_shapes_list=None):
         negative_shapes_list = [] if negative_shapes_list is None else negative_shapes_list
         negative_polygons_list = [shape for shape in negative_shapes_list if shape.tipo != "Circular"]
-        x_border_segment_list = []
-        y_border_segment_list = []
+        
+        # Combine all segments into single lists with None separators for performance
+        x_combined = []
+        y_combined = []
+        
         for unsplit_segment in element.boundary_segments_list:
             split_segment_list = self._split_segment_in_negative_polygons(unsplit_segment, negative_polygons_list)
             for segment in split_segment_list:
-                x_border_segment_list.append([segment.start_node.x, segment.end_node.x])
-                y_border_segment_list.append([segment.start_node.y, segment.end_node.y])
-        for index, x_to_plot in enumerate(x_border_segment_list):
+                x_combined.extend([segment.start_node.x, segment.end_node.x, None])
+                y_combined.extend([segment.start_node.y, segment.end_node.y, None])
+        
+        # Add single trace instead of multiple traces for better performance
+        if x_combined:
             self.fig.add_trace(go.Scatter(
-                x=x_border_segment_list[index], y=y_border_segment_list[index],
+                x=x_combined,
+                y=y_combined,
                 showlegend=False,
                 opacity=transparencia,
-                line=dict(width=thickness),
+                line=dict(width=thickness, color=color),
                 hoverinfo='skip',
-                marker=dict(
-                    size=0.1,
-                    color=color,
-                )))
+                mode='lines'
+            ))
 
     def plot_negative_polygon(
             self, element, color, thickness, transparencia, positive_polygons_list, negative_polygons_list):
@@ -72,23 +76,25 @@ class ACSAHEPlotlyEngine(object):
                 if segment in cleaned_segment_list and other_polygon.is_segment_a_border_segment(segment):
                     cleaned_segment_list.remove(segment)
 
-        x_borde = []
-        y_borde = []
+        # Combine all segments into single lists with None separators for performance
+        x_combined = []
+        y_combined = []
+        
         for cleaned_segment in cleaned_segment_list:
-            x_borde.append([cleaned_segment.start_node.x, cleaned_segment.end_node.x])
-            y_borde.append([cleaned_segment.start_node.y, cleaned_segment.end_node.y])
+            x_combined.extend([cleaned_segment.start_node.x, cleaned_segment.end_node.x, None])
+            y_combined.extend([cleaned_segment.start_node.y, cleaned_segment.end_node.y, None])
 
-        for index, x_to_plot in enumerate(x_borde):
+        # Add single trace instead of multiple traces for better performance
+        if x_combined:
             self.fig.add_trace(go.Scatter(
-                x=x_borde[index], y=y_borde[index],
+                x=x_combined,
+                y=y_combined,
                 showlegend=False,
                 opacity=transparencia,
-                line=dict(width=thickness),
+                line=dict(width=thickness, color=color),
                 hoverinfo='skip',
-                marker=dict(
-                    size=0.1,
-                    color=color,
-                )))
+                mode='lines'
+            ))
 
     @staticmethod
     def _split_segment_in_negative_polygons(segment_to_split, negative_polygons_list):
@@ -493,10 +499,35 @@ class ACSAHEPlotlyEngine(object):
             return fig_3d, arguments_2d_list, figs_2d_list
 
     def _get_2d_args(self, subset_data, lambda_angle, geometric_solution):
-        x_total_list = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for
-                        x, y
-                        in
-                        zip(subset_data["x"], subset_data["y"])]
+        try:
+            lambda_value = float(lambda_angle)
+        except (TypeError, ValueError):
+            lambda_value = 0.0
+
+        # Angles equal to -1 are treated as 0° in the solver (legacy sentinel), keep consistent here.
+        if lambda_value == -1:
+            lambda_value = 0.0
+
+        lambda_rad = math.radians(lambda_value)
+        cos_lambda = math.cos(lambda_rad)
+        sin_lambda = math.sin(lambda_rad)
+
+        x_total_list = []
+        plane_indices = subset_data.get("plane_indices")
+        for idx, (x_coord, y_coord) in enumerate(zip(subset_data["x"], subset_data["y"])):
+            # `subset_data["x"]` and `["y"]` store -Mx/100 and -My/100 respectively.
+            mx_component = -x_coord
+            my_component = -y_coord
+            mn_lambda = mx_component * cos_lambda + my_component * sin_lambda
+            if plane_indices and idx < len(plane_indices):  # Ordering by indices to avoid extreme cases for switching results consistency.
+                plane_idx = plane_indices[idx]
+                expected_sign = 1 if plane_idx >= 0 else -1
+                if mn_lambda == 0:
+                    mn_lambda = 0.0
+                elif mn_lambda * expected_sign < 0:
+                    mn_lambda = abs(mn_lambda) * expected_sign
+            x_total_list.append(mn_lambda)
+
         x_to_verify, y_to_verify, comb_id_to_verify = self._get_load_combinations_data(geometric_solution, lambda_angle)
         return dict(x_total_list=x_total_list, y_total_list=subset_data["z"], phi_total_list=subset_data["phi"],
                     text_total_list=subset_data["text"], color_total_list=subset_data["color"],
@@ -528,6 +559,10 @@ class ACSAHEPlotlyEngine(object):
             "ctrl_p_js": assets["ctrl_p_js"],
             "html_seccion": self.section_fig.to_html(
                 full_html=False,
+                # Use CDN so this block loads Plotly.js before executing its own script.
+                # This avoids 'Plotly is not defined' errors when the section is rendered
+                # before the main result figure.
+                include_plotlyjs='cdn',
                 config=self.get_fig_html_config("ACSAHE - Sección")
             ),
             "tabla_propiedades": html_engine.propiedades_html(gs),
@@ -657,8 +692,10 @@ class ACSAHEPlotlyEngine(object):
 
         fig.update_layout(
             updatemenus=[dict(
-                type="buttons",
+                type="dropdown",
                 direction="down",
+                showactive=True,  # Highlight the active selection
+                active=0,  # "Mostrar todos" is the default active option (index 0)
                 buttons=result["buttons"],
                 x=0.02,
                 y=0.98,
@@ -672,14 +709,39 @@ class ACSAHEPlotlyEngine(object):
                     size=16,
                     color="black"
                 )
-
-            )]
+            )],
+            annotations=[
+                dict(
+                    # Add spaces to match dropdown width (approximately "Mostrar todos" + arrow width)
+                    text="<b>Plano de carga&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b>",
+                    x=0.02,
+                    y=0.99,
+                    xref="paper",
+                    yref="paper",
+                    xanchor='right',
+                    yanchor='bottom',
+                    showarrow=False,
+                    font=dict(
+                        family="Times New Roman",
+                        size=16,
+                        color="black"
+                    ),
+                    bgcolor='rgba(240,240,240,0.7)',
+                    bordercolor='Grey',
+                    borderwidth=1,
+                    borderpad=8,  # Padding around the text
+                    align='left'  # Align text to left like the dropdown
+                )
+            ]
         )
 
         fig.update_layout(
             scene_camera=dict(
                 eye=dict(x=1.4, y=1.4, z=1.2)  # zooms out by moving the camera back
-            )
+            ),
+            # Performance optimizations for large datasets
+            hovermode='closest',
+            transition={'duration': 0},  # Disable animations for better performance
         )
 
         return fig
@@ -722,14 +784,19 @@ class ACSAHEPlotlyEngine(object):
 
         total_traces = len(all_traces)
 
-        # add "Mostrar todos" button
-        buttons.append(self._build_show_all_button(total_traces))
+        # Create dropdown menu buttons: "Mostrar todos" as default, then all lambda values
+        dropdown_buttons = []
+        
+        # Add "Mostrar todos" as the first/default option
+        dropdown_buttons.append(self._build_show_all_button(total_traces))
+        
+        # Add all lambda angles as dropdown options
+        # Sort lambda angles for better organization
+        sorted_lambdas = sorted(trace_indices_map.items(), key=lambda x: float(x[0]) if x[0].replace('.', '').replace('-', '').isdigit() else float('inf'))
+        for lambda_angle, indices in sorted_lambdas:
+            dropdown_buttons.append(self._build_visibility_button(lambda_angle, indices, total_traces))
 
-        # create a button for each lambda_angle
-        for lambda_angle, indices in trace_indices_map.items():
-            buttons.append(self._build_visibility_button(lambda_angle, indices, total_traces))
-
-        return {"traces": all_traces, "buttons": buttons}
+        return {"traces": all_traces, "buttons": dropdown_buttons}
 
     def _build_scatter3d_trace(self, x, y, z, color, text, is_capped_list, capped=True):
         # filter points based on capped status
@@ -743,6 +810,18 @@ class ACSAHEPlotlyEngine(object):
                 filtered_color.append("rgba(21,82,171,0.90)" if capped is False else "Grey")
                 filtered_text.append(text[i])
 
+        # Downsample for visualization if dataset is very large (>2000 points per trace)
+        max_points = 2000
+        if len(filtered_x) > max_points:
+            # Keep every nth point to reduce to max_points, preserving shape
+            step = len(filtered_x) // max_points
+            filtered_x = filtered_x[::step]
+            filtered_y = filtered_y[::step]
+            filtered_z = filtered_z[::step]
+            filtered_color = filtered_color[::step]
+            filtered_text = filtered_text[::step]
+
+        # Reduced marker size for better performance with large datasets
         return go.Scatter3d(
             x=filtered_x,
             y=filtered_y,
@@ -823,6 +902,15 @@ class ACSAHEPlotlyEngine(object):
                 modified_color_list[i] = "Grey"
             else:
                 modified_color_list[i] = points_color
+
+        # Downsample if too many points for better browser performance
+        if len(x_total_list) > 3000:
+            step = len(x_total_list) // 3000
+            x_total_list = x_total_list[::step]
+            y_total_list = y_total_list[::step]
+            text_total_list = text_total_list[::step]
+            modified_color_list = modified_color_list[::step]
+            is_capped_list = is_capped_list[::step]
 
         fig.add_trace(go.Scatter(
             x=x_total_list,
@@ -907,18 +995,28 @@ class ACSAHEPlotlyEngine(object):
         return fig
 
     @staticmethod
-    def hover_text_2d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante):
+    def hover_text_2d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante, plane_indices=None):
         M_lista = [(1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2) for x, y in
                    zip(lista_x, lista_y)]
-        return [
-            f"ϕPn: {round(z, 2)} kN<br>ϕMnλ: {round(M, 2)} kNm<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
-            for x, y, z, phi, M in zip(lista_x, lista_y, lista_z, lista_phi, M_lista)]
+        if plane_indices and len(plane_indices) == len(lista_z):
+            return [
+                f"ϕPn: {round(z, 2)} kN<br>ϕMnλ: {round(M, 2)} kNm<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°<br>Plano índice: {int(plane_idx)}"
+                for x, y, z, phi, M, plane_idx in zip(lista_x, lista_y, lista_z, lista_phi, M_lista, plane_indices)]
+        else:
+            return [
+                f"ϕPn: {round(z, 2)} kN<br>ϕMnλ: {round(M, 2)} kNm<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
+                for x, y, z, phi, M in zip(lista_x, lista_y, lista_z, lista_phi, M_lista)]
 
     @staticmethod
-    def hover_text_3d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante):
-        return [
-            f"ϕPn: {round(z, 2)} kN<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
-            for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
+    def hover_text_3d(lista_x, lista_y, lista_z, lista_phi, plano_de_carga, es_phi_constante, plane_indices=None):
+        if plane_indices and len(plane_indices) == len(lista_z):
+            return [
+                f"ϕPn: {round(z, 2)} kN<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°<br>Plano índice: {int(plane_idx)}"
+                for x, y, z, phi, plane_idx in zip(lista_x, lista_y, lista_z, lista_phi, plane_indices)]
+        else:
+            return [
+                f"ϕPn: {round(z, 2)} kN<br>ϕMnx: {round(x, 2)} kNm<br>ϕMny: {round(y, 2)} kNm<br>ϕ: {round(phi, 2)}{' (constante)' if es_phi_constante else ''}<br>λ={plano_de_carga}°"
+                for x, y, z, phi in zip(lista_x, lista_y, lista_z, lista_phi)]
 
     @staticmethod
     def _convert_to_int_if_possible(int_number):
@@ -941,6 +1039,9 @@ class ACSAHEPlotlyEngine(object):
     def get_fig_html_config(file_name="ACSAHE"):
         return {
             'responsive': True,
+            'displayModeBar': True,
+            'displaylogo': False,
+            'scrollZoom': True,
             'toImageButtonOptions': {
                 'format': 'png',
                 'filename': file_name,

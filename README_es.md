@@ -8,9 +8,9 @@
 ACSAHE es un programa dedicado a la elaboración de Diagramas de Interacción Momento-Normal para secciones arbitrarias de hormigón estructural, basado en la reglamentación CIRSOC 201 de la República Argentina.
 
 Fue desarrollado por Facundo L. Pfeffer en conjunto con el Dr. Ing. Oscar Möller en el Instituto de Mecánica Aplicada y Estructuas (IMAE) de la de la Universidad Nacional de Rosario.
-## 📦 Instalación
+## Instalación
 Coexisten actualmente **dos versiones** del programa ACSAHE: 
-#### 🆕Nueva versión: instalación como app de Windows
+#### Nueva versión: instalación como app de Windows
 La Nueva versión cuenta con una instalación más sencilla como app de Windows, la posibilidad de correr todo desde un simple archivo .exe, generar reportes en .pdf y más!
 Los pasos para la instalación son:
 1. Descargar el instalador desde la sección [Releases](https://github.com/Facundo-Pfeffer/ACSAHE/releases).
@@ -20,14 +20,55 @@ Los pasos para la instalación son:
 
 
 
-#### 👜Versión Portable
-La versión original del programa para los viejos usuarios. 
+#### Versión Legacy Excel/VBA
+La versión original del programa que se integra con Excel mediante VBA. Esta versión está **mantenida pero deprecada** - los nuevos usuarios deberían usar la versión moderna de la aplicación de Windows.
 
 Para su instalación, bastará simplemente con descargar el archivo compresible, abrir la planilla base "ACSAHE" y luego seguir el instructivo allí indicado.  **Enlace de descarga:**
 https://drive.google.com/file/d/1MHzbSE-l57YmWEzidX8B6qmdM4cQ-EQW/
+
+**Para desarrolladores**: Ver [LEGACY.md](LEGACY.md) para información detallada sobre la integración legacy Excel/VBA, incluyendo instrucciones de compilación y arquitectura.
+
+## Compilación desde el Código Fuente
+
+Para compilar el ejecutable de ACSAHE desde el código fuente:
+
+### Requisitos Previos
+- Python 3.9, 3.10, o 3.11
+- Todas las dependencias de `requirements.txt`
+- PyInstaller: `pip install pyinstaller`
+
+### Compilación Rápida
+
+1. **Instalar dependencias**:
+   ```bash
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **Compilar el ejecutable**:
+   ```bash
+   pyinstaller ACSAHE.spec
+   ```
+
+3. **Salida**: El ejecutable se creará en `dist/ACSAHE.exe`
+
+### Compilar el Instalador (Opcional)
+
+Para crear un paquete instalador de Windows, necesitarás Inno Setup 6+:
+
+```bash
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_sctipt.iss
+```
+
+El instalador se creará en `dist_installer/Instalador_ACSAHE.exe`
+
+### Documentación Detallada
+
+Para instrucciones de compilación completas, solución de problemas y opciones de configuración avanzadas, ver [BUILD_AND_DEPLOYMENT.md](BUILD_AND_DEPLOYMENT.md).
+
 ## Tutoriales en Canal de Youtube
 Para lograr un mejor entendimiento por los usuarios y aprendizaje del software, se ha creado un canal de YouTube en el cual se adicionaran progresivamente tutoriales explicativos.  https://www.youtube.com/playlist?list=PL2vqHDQzjyupe7ISb2vA9EGn0Qr31nW7g
-## 💻 Featured YouTube Videos
+## Featured YouTube Videos
 [![ACSAHE Presentation](https://ytcards.demolab.com/?id=QqawT_ZerwE&title=PRESENTACIÓN+ARGENTINA+EN+COLEIC+PANAMÁ:+GANADORA+DEL+PRIMER+PUESTO+-+Facundo+L.+Pfeffer&lang=en&timestamp=1638183600&background_color=%230d1117&title_color=%23ffffff&stats_color=%23dedede&max_title_lines=1&width=250&border_radius=5&duration=380 "PRESENTACIÓN ARGENTINA EN COLEIC PANAMÁ: GANADORA DEL PRIMER PUESTO - Facundo L. Pfeffer")](https://youtu.be/QqawT_ZerwE?si=gV1tgwvtkunF_Gk4)
 
 ## Bibliografía

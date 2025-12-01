@@ -504,3 +504,68 @@ def create_workbook_from_template(template_path, target_path, sheet_name=None):
         wb.save()
         wb.close()
         app.quit()
+
+# ============================================================================
+# LEGACY METHODS - Excel/VBA Integration
+# ============================================================================
+# These functions are part of the legacy Excel/VBA integration system.
+# Status: Maintained but deprecated - only used by legacy/excel_input_acsahe.py
+# 
+# Legacy entry point: excel_input_main.py
+# Legacy build spec: ACSAHE_excel.spec
+# 
+# Modern version uses ExcelSheetManager class instead of these functions.
+# See LEGACY.md for detailed documentation.
+# ============================================================================
+
+import numpy as np
+import math
+
+def insert_uniaxial_result_values(geometric_solution, data_subset, lista_puntos_a_verificar):
+    diagrama_interaccion_wb = geometric_solution.diagrama_interaccion_sheet
+
+    lista_x_total, lista_y_total, lista_phi_total, lista_capped_total = [], [], [], []
+    for k, v in data_subset.items():
+
+        for x, y, z, phi, is_capped in zip(v["x"], v["y"], v["z"], v["phi"], v["is_capped"]):
+            lista_x_total.append((1 if x > 0 else -1 if x != 0 else 1 if y >= 0 else -1) * math.sqrt(x ** 2 + y ** 2))
+            lista_y_total.append(z)
+            lista_phi_total.append(phi)
+            lista_capped_total.append("V" if is_capped is True else "F")
+        list_values = np.array([lista_y_total, lista_x_total, lista_phi_total, lista_capped_total])
+        list_values = list_values.transpose().tolist()
+        diagrama_interaccion_wb.change_cell_value_by_range("G1", k)
+        diagrama_interaccion_wb.insert_values_vertically(
+            "I4", list_values, columns_to_clean=["I", "J", "K", "L"], start_row=4)
+
+        X = [x["M"] for x in lista_puntos_a_verificar]
+        Y = [x["P"] for x in lista_puntos_a_verificar]
+
+        puntos_a_verificar = np.array([Y, X]).transpose().tolist()
+        if len(puntos_a_verificar) > 0:
+            diagrama_interaccion_wb.insert_values_vertically(
+                "O4", puntos_a_verificar, columns_to_clean=["O", "P"], start_row=4)
+
+
+def insert_biaxial_result_values(geometric_solution, data_subset):
+    diagrama_interaccion_3D_wb = geometric_solution.diagrama_interaccion_3D_sheet
+    i = 0  # contador
+    for k, v in data_subset.items():
+        list_values = np.array([v["x"], v["y"], v["z"], v["phi"]])
+        list_values = list_values.transpose().tolist()
+        if i == 0:  # Poniendo el valor de lambda en la primera celda
+            diagrama_interaccion_3D_wb.change_cell_value_by_range("A1", f"λ= {k}°")
+            diagrama_interaccion_3D_wb.delete_contents_from_column(5)
+            diagrama_interaccion_3D_wb.insert_values_vertically("A4", list_values, start_row=4)
+            i = i + 1
+            continue
+        new_range = diagrama_interaccion_3D_wb.calculate_new_range_by_coll_offset("A1:D3", column_offset=5 * i)
+        diagrama_interaccion_3D_wb.copy_paste_range("A1:D5000", new_range)
+        diagrama_interaccion_3D_wb.clear_contents_from_column(1+5*i, 5, 4, 5000)
+        top_bottom_cell = new_range.split(":")[0]
+        diagrama_interaccion_3D_wb.change_cell_value_by_range(top_bottom_cell, f"λ= {k}°")
+        diagrama_interaccion_3D_wb.insert_values_vertically(
+            diagrama_interaccion_3D_wb.shift_cell_by_offset(top_bottom_cell, col_offset=0, row_offset=3),
+            list_values,
+            start_row=4)
+        i = i + 1

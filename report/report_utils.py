@@ -11,7 +11,7 @@ import plotly.io as pio
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from plotly.graph_objs import Figure
+from plotly.graph_objects import Figure
 
 import uuid
 import tempfile
