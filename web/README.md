@@ -1,0 +1,1 @@
+This is the section of the repository dedicated to the Vercel WebApp where the project is hosted. 
